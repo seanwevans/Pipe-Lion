@@ -92,6 +92,8 @@ function App() {
           `${file.name} is ${formattedFileSize} MB, which exceeds the configured limit of ${maxFileSizeMB} MB.`,
         );
         setStatus("Choose a smaller file or increase the max file size limit.");
+        setPacketSummary("Awaiting packet data.");
+        setHexDump("No data loaded.");
         return;
       }
 
@@ -112,6 +114,8 @@ function App() {
         console.error("Processing failed", err);
         setError("Failed to process the uploaded file.");
         setStatus("Drop a packet capture or binary payload to analyze.");
+        setPacketSummary("Awaiting packet data.");
+        setHexDump("No data loaded.");
       }
     },
     [maxFileSizeMB],
