@@ -312,14 +312,58 @@ function App() {
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
   const isMountedRef = useRef(true);
+  const fileReaderRef = useRef<FileReader | null>(null);
+
+  const abortActiveReader = useCallback(() => {
+    const activeReader = fileReaderRef.current;
+    if (activeReader) {
+      activeReader.abort();
+      fileReaderRef.current = null;
+    }
+  }, []);
+
+  const readFileBytes = useCallback(
+    (file: File) =>
+      new Promise<Uint8Array>((resolve, reject) => {
+        abortActiveReader();
+
+        const reader = new FileReader();
+        fileReaderRef.current = reader;
+
+        reader.onload = () => {
+          fileReaderRef.current = null;
+          const result = reader.result;
+          if (result instanceof ArrayBuffer) {
+            resolve(new Uint8Array(result));
+            return;
+          }
+
+          reject(new Error("Unexpected file reader result."));
+        };
+
+        reader.onerror = () => {
+          fileReaderRef.current = null;
+          reject(reader.error ?? new Error("Failed to read file."));
+        };
+
+        reader.onabort = () => {
+          fileReaderRef.current = null;
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+
+        reader.readAsArrayBuffer(file);
+      }),
+    [abortActiveReader],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       uploadTokenRef.current += 1;
+      abortActiveReader();
     };
-  }, []);
+  }, [abortActiveReader]);
 
   useEffect(() => {
     loadProcessor()
@@ -378,11 +422,10 @@ function App() {
       setError(null);
 
       try {
-        const buffer = await file.arrayBuffer();
+        const bytes = await readFileBytes(file);
         if (uploadTokenRef.current !== token) {
           return;
         }
-        const bytes = new Uint8Array(buffer);
         const processor = await loadProcessor();
         if (uploadTokenRef.current !== token) {
           return;
@@ -409,6 +452,9 @@ function App() {
         }
         setError(null);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         console.error("Processing failed", err);
         if (uploadTokenRef.current !== token) {
           return;
@@ -432,7 +478,7 @@ function App() {
         setHexDump("No data loaded.");
       }
     },
-    [maxFileSizeMB],
+    [maxFileSizeMB, readFileBytes],
   );
 
   const enqueueFile = useCallback(
