@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pre-commit
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo fmt --check
+        run: cargo fmt --manifest-path core/Cargo.toml --all -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Run cargo test
+        run: cargo test --manifest-path core/Cargo.toml --all-features
+
+  webapp:
+    name: Webapp lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: webapp
+        run: npm ci
+
+      - name: Run lint
+        working-directory: webapp
+        run: npm run lint
