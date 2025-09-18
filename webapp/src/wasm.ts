@@ -3,6 +3,7 @@ export type PacketProcessor = {
 }
 
 let cachedProcessor: PacketProcessor | null = null
+let loadPromise: Promise<PacketProcessor> | null = null
 
 const wasmPath = '/pkg/core_bg.wasm'
 const wasmModule = '/pkg/core.js'
@@ -16,12 +17,23 @@ export async function loadProcessor(): Promise<PacketProcessor> {
     return cachedProcessor
   }
 
-  const module = (await import(/* @vite-ignore */ wasmModule)) as {
-    default: InitFn
-    process_packet: (data: Uint8Array) => string
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      try {
+        const module = (await import(/* @vite-ignore */ wasmModule)) as {
+          default: InitFn
+          process_packet: (data: Uint8Array) => string
+        }
+
+        await module.default(wasmPath)
+        cachedProcessor = { process_packet: module.process_packet }
+        return cachedProcessor
+      } catch (error) {
+        loadPromise = null
+        throw error
+      }
+    })()
   }
 
-  await module.default(wasmPath)
-  cachedProcessor = { process_packet: module.process_packet }
-  return cachedProcessor
+  return loadPromise
 }
