@@ -4,6 +4,7 @@
 
 **Pipe Lion** is a browser-first packet inspection playground. The goal is to pair a WebAssembly-powered
 Rust core with a modern web interface so that packet traces can be explored entirely in the browser.
+Wireshark, Pipelion, nevermind... I'll see myself out.
 
 ---
 
