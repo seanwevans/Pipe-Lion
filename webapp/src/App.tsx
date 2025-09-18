@@ -59,7 +59,7 @@ function clamp(value: number, min: number, max: number) {
 
 function App() {
   const [status, setStatus] = useState(
-    "Drop a packet capture or binary payload to analyze.",
+    "Drop packet captures or binary payloads to analyze.",
   );
   const [packetSummary, setPacketSummary] = useState("Awaiting packet data.");
   const [hexDump, setHexDump] = useState("No data loaded.");
@@ -68,13 +68,14 @@ function App() {
   const [isReady, setIsReady] = useState(false);
   const [maxFileSizeMB, setMaxFileSizeMB] = useState(DEFAULT_MAX_FILE_SIZE_MB);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
 
   useEffect(() => {
     loadProcessor()
       .then(() => {
         setIsReady(true);
-        setStatus("Drop a packet capture or binary payload to analyze.");
+        setStatus("Drop packet captures or binary payloads to analyze.");
       })
       .catch((err) => {
         console.error("Failed to load Wasm module", err);
@@ -127,6 +128,7 @@ function App() {
           return;
         }
         setError("Failed to process the uploaded file.");
+
         setStatus("Drop a packet capture or binary payload to analyze.");
         setPacketSummary("Awaiting packet data.");
         setHexDump("No data loaded.");
@@ -135,16 +137,28 @@ function App() {
     [maxFileSizeMB],
   );
 
-  const onDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      setDragActive(false);
-      const file = event.dataTransfer.files?.[0];
-      if (file) {
-        void handleFile(file);
-      }
+  const enqueueFile = useCallback(
+    (file: File) => {
+      processingQueueRef.current = processingQueueRef.current
+        .then(() => handleFile(file))
+        .catch((err) => {
+          console.error("Queued file processing failed", err);
+        });
+      return processingQueueRef.current;
     },
     [handleFile],
+  );
+
+  const onDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setDragActive(false);
+      const files = Array.from(event.dataTransfer.files ?? []);
+      for (const file of files) {
+        await enqueueFile(file);
+      }
+    },
+    [enqueueFile],
   );
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
@@ -159,14 +173,15 @@ function App() {
   }, []);
 
   const onFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (file) {
-        void handleFile(file);
-        event.target.value = "";
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const input = event.target;
+      const files = Array.from(input.files ?? []);
+      for (const file of files) {
+        await enqueueFile(file);
       }
+      input.value = "";
     },
-    [handleFile],
+    [enqueueFile],
   );
 
   const onBrowseClick = useCallback(() => {
