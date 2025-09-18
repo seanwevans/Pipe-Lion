@@ -63,3 +63,16 @@ npm run build
 - The React UI preloads `core.wasm`, handles drag-and-drop uploads, and renders placeholder panes for packet summaries and hex
   output to make iterating on the Wasm module straightforward.
 - Additional tooling (tests, linting, CI) will be added as the project grows.
+
+---
+
+## GitHub Pages Deployment
+
+- Pushes to the `main` branch automatically build the WebAssembly core, bundle the React
+  frontend, and publish the static site to GitHub Pages via the workflow defined in
+  [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+- The Vite configuration detects the repository name from the GitHub Actions environment
+  and adjusts the base path so assets resolve correctly when served from
+  `https://<username>.github.io/<repository>/`.
+- To trigger a manual deployment, run the **Deploy GitHub Pages** workflow from the
+  Actions tab in the GitHub UI.

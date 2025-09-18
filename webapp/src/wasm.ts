@@ -5,8 +5,24 @@ export type PacketProcessor = {
 let cachedProcessor: PacketProcessor | null = null;
 let loadPromise: Promise<PacketProcessor> | null = null;
 
-const wasmPath = new URL("pkg/core_bg.wasm", import.meta.env.BASE_URL);
-const wasmModule = new URL("pkg/core.js", import.meta.env.BASE_URL);
+const baseUrl = import.meta.env.BASE_URL ?? "/";
+const absoluteBaseUrl =
+  typeof window !== "undefined" && window.location
+    ? new URL(baseUrl, window.location.origin).toString()
+    : baseUrl;
+
+const resolveAssetUrl = (path: string): string => {
+  const resolved = new URL(path, absoluteBaseUrl).toString();
+
+  if (import.meta.env.DEV) {
+    console.debug(`[wasm] Resolved ${path} to ${resolved}`);
+  }
+
+  return resolved;
+};
+
+const wasmPath = resolveAssetUrl("./pkg/core_bg.wasm");
+const wasmModule = resolveAssetUrl("./pkg/core.js");
 const wasmModulePath = wasmModule.href;
 const wasmBinaryPath = wasmPath.href;
 
