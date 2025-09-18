@@ -69,6 +69,7 @@ function App() {
   const [maxFileSizeMB, setMaxFileSizeMB] = useState(DEFAULT_MAX_FILE_SIZE_MB);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const uploadTokenRef = useRef(0);
 
   useEffect(() => {
     loadProcessor()
@@ -85,6 +86,7 @@ function App() {
 
   const handleFile = useCallback(
     async (file: File) => {
+      const token = ++uploadTokenRef.current;
       const maxBytes = maxFileSizeMB * BYTES_PER_MEGABYTE;
       if (file.size > maxBytes) {
         const fileSizeMB = file.size / BYTES_PER_MEGABYTE;
@@ -93,6 +95,8 @@ function App() {
           `${file.name} is ${formattedFileSize} MB, which exceeds the configured limit of ${maxFileSizeMB} MB.`,
         );
         setStatus("Choose a smaller file or increase the max file size limit.");
+        setPacketSummary("Awaiting packet data.");
+        setHexDump("No data loaded.");
         return;
       }
 
@@ -101,18 +105,33 @@ function App() {
 
       try {
         const buffer = await file.arrayBuffer();
+        if (uploadTokenRef.current !== token) {
+          return;
+        }
         const bytes = new Uint8Array(buffer);
         const processor = await loadProcessor();
+        if (uploadTokenRef.current !== token) {
+          return;
+        }
         const summary = processor.process_packet(bytes);
 
+        if (uploadTokenRef.current !== token) {
+          return;
+        }
         setPacketSummary(summary);
         setHexDump(formatHex(bytes));
         setStatus(`Processed ${file.name}.`);
         setError(null);
       } catch (err) {
         console.error("Processing failed", err);
+        if (uploadTokenRef.current !== token) {
+          return;
+        }
         setError("Failed to process the uploaded file.");
-        setStatus("Drop packet captures or binary payloads to analyze.");
+
+        setStatus("Drop a packet capture or binary payload to analyze.");
+        setPacketSummary("Awaiting packet data.");
+        setHexDump("No data loaded.");
       }
     },
     [maxFileSizeMB],
@@ -203,7 +222,12 @@ function App() {
         <p className="tagline">
           Experiment with WebAssembly-powered packet parsing.
         </p>
-        <p className="status" data-ready={isReady}>
+        <p
+          className="status"
+          data-ready={isReady}
+          role="status"
+          aria-live="polite"
+        >
           {status}
         </p>
       </header>
@@ -253,7 +277,11 @@ function App() {
         </label>
       </section>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
 
       <section className="panes">
         <article className="pane">
