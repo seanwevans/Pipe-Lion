@@ -27,11 +27,11 @@ Wireshark, Pipelion, nevermind... I'll see myself out.
 From the repository root, run:
 
 ```bash
-wasm-pack build core --target web --out-dir webapp/public/pkg
+wasm-pack build core --target web --out-dir docs/public/pkg
 ```
 
 This command compiles the `core` crate, generates the accompanying JavaScript bindings, and places the artifacts where the
-frontend can fetch them (`webapp/public/pkg`). Re-run it whenever you change the Rust code.
+frontend can fetch them (`docs/public/pkg`). Re-run it whenever you change the Rust code.
 
 ---
 
@@ -40,7 +40,7 @@ frontend can fetch them (`webapp/public/pkg`). Re-run it whenever you change the
 Install the frontend dependencies and start the development server:
 
 ```bash
-cd webapp
+cd docs
 npm install
 npm run dev
 ```

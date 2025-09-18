@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 18
           cache: npm
-          cache-dependency-path: webapp/package-lock.json
+          cache-dependency-path: docs/package-lock.json
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -36,20 +36,20 @@ jobs:
         run: cargo install wasm-pack
 
       - name: Build WebAssembly package
-        run: wasm-pack build core --target web --out-dir webapp/public/pkg
+        run: wasm-pack build core --target web --out-dir docs/public/pkg
 
       - name: Install frontend dependencies
-        working-directory: webapp
+        working-directory: docs
         run: npm ci
 
       - name: Build site
-        working-directory: webapp
+        working-directory: docs
         run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: webapp/dist
+          path: docs/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
