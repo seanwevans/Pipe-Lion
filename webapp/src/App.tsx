@@ -169,6 +169,10 @@ function App() {
 
   const onDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    const related = event.relatedTarget as Node | null;
+    if (related && event.currentTarget.contains(related)) {
+      return;
+    }
     setDragActive(false);
   }, []);
 
@@ -188,16 +192,6 @@ function App() {
     fileInputRef.current?.click();
   }, []);
 
-  const onDropZoneKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        onBrowseClick();
-      }
-    },
-    [onBrowseClick],
-  );
-
   const onMaxFileSizeChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const parsedValue = Number(event.target.value);
@@ -215,84 +209,200 @@ function App() {
     [],
   );
 
+  const summaryLines = packetSummary
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const hasPacketData = summaryLines.length > 0;
+  const hasHexData = hexDump !== "No data loaded.";
+
   return (
     <div className="app">
-      <header className="header">
-        <h1>Pipe-Lion Packet Playground</h1>
-        <p className="tagline">
-          Experiment with WebAssembly-powered packet parsing.
-        </p>
-        <p
-          className="status"
-          data-ready={isReady}
-          role="status"
-          aria-live="polite"
-        >
-          {status}
-        </p>
-      </header>
+      <input
+        ref={fileInputRef}
+        id="file-input"
+        type="file"
+        accept=".pcap,.pcapng,.bin,.dat,.raw,.txt,application/octet-stream"
+        onChange={onFileChange}
+        hidden
+      />
 
-      <section
-        className={`drop-zone${dragActive ? " active" : ""}`}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onKeyDown={onDropZoneKeyDown}
-        role="button"
-        tabIndex={0}
-      >
-        <input
-          ref={fileInputRef}
-          id="file-input"
-          type="file"
-          accept=".pcap,.pcapng,.bin,.dat,.raw,.txt,application/octet-stream"
-          onChange={onFileChange}
-          hidden
-        />
-        <p className="drop-label">Drag &amp; drop files here</p>
-        <p className="drop-sub">or</p>
-        <button
-          className="browse-button"
-          type="button"
-          onClick={onBrowseClick}
-          disabled={!isReady}
-        >
-          Browse files
-        </button>
-      </section>
-
-      <section className="settings">
-        <label className="settings__item" htmlFor="max-file-size">
-          <span>Max file size (MB)</span>
-          <input
-            id="max-file-size"
-            type="number"
-            min={MIN_FILE_SIZE_MB}
-            max={MAX_FILE_SIZE_MB}
-            step={1}
-            value={maxFileSizeMB}
-            onChange={onMaxFileSizeChange}
-            disabled={!isReady}
-          />
-        </label>
-      </section>
-
-      {error && (
-        <div className="error" role="alert" aria-live="assertive">
-          {error}
+      <div className="window">
+        <div className="window-top-bar">
+          <div className="window-controls" aria-hidden="true">
+            <span className="control-dot control-close" />
+            <span className="control-dot control-minimize" />
+            <span className="control-dot control-zoom" />
+          </div>
+          <h1 className="window-title">Pipe-Lion Packet Playground</h1>
+          <span
+            className="status-chip"
+            data-ready={isReady}
+            role="status"
+            aria-live="polite"
+          >
+            {status}
+          </span>
         </div>
-      )}
 
-      <section className="panes">
-        <article className="pane">
-          <h2>Packet Summary</h2>
-          <pre>{packetSummary}</pre>
-        </article>
-        <article className="pane">
-          <h2>Hex Preview</h2>
-          <pre>{hexDump}</pre>
-        </article>
-      </section>
+        <nav className="menu-bar" aria-label="Application menu">
+          <button type="button">File</button>
+          <button type="button">Edit</button>
+          <button type="button">View</button>
+          <button type="button">Go</button>
+          <button type="button">Capture</button>
+          <button type="button">Analyze</button>
+          <button type="button">Statistics</button>
+          <button type="button">Telephony</button>
+          <button type="button">Wireless</button>
+          <button type="button">Tools</button>
+          <button type="button">Help</button>
+        </nav>
+
+        <div className="toolbar">
+          <div className="toolbar-buttons">
+            <button
+              type="button"
+              onClick={onBrowseClick}
+              disabled={!isReady}
+            >
+              Open Capture…
+            </button>
+            <button type="button" disabled>
+              Save As…
+            </button>
+            <button type="button" disabled>
+              Restart Capture
+            </button>
+          </div>
+          {error ? (
+            <div className="toolbar-error" role="alert" aria-live="assertive">
+              {error}
+            </div>
+          ) : (
+            <div className="toolbar-hint">
+              Max file size can be adjusted in the filter bar.
+            </div>
+          )}
+        </div>
+
+        <div className="filter-bar">
+          <label className="filter-input" htmlFor="display-filter">
+            <span>Display filter</span>
+            <input
+              id="display-filter"
+              type="text"
+              placeholder="tcp && http"
+              spellCheck={false}
+              disabled
+            />
+          </label>
+          <div className="filter-controls">
+            <label htmlFor="max-file-size">Max file size (MB)</label>
+            <input
+              id="max-file-size"
+              type="number"
+              min={MIN_FILE_SIZE_MB}
+              max={MAX_FILE_SIZE_MB}
+              step={1}
+              value={maxFileSizeMB}
+              onChange={onMaxFileSizeChange}
+              disabled={!isReady}
+            />
+          </div>
+        </div>
+
+        <div
+          className={`workspace${dragActive ? " dragging" : ""}`}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+        >
+          <section className="pane packet-list" aria-label="Packet list">
+            <header>
+              <h2>Packet List</h2>
+              <span className="pane-subtitle">
+                Showing {hasPacketData ? summaryLines.length : 0} entries
+              </span>
+            </header>
+            <div className="packet-table" role="table" aria-label="Captured packets">
+              <div className="table-row table-header" role="row">
+                <span role="columnheader">No.</span>
+                <span role="columnheader">Time</span>
+                <span role="columnheader">Source</span>
+                <span role="columnheader">Destination</span>
+                <span role="columnheader">Protocol</span>
+                <span role="columnheader">Length</span>
+                <span role="columnheader">Info</span>
+              </div>
+              {hasPacketData ? (
+                summaryLines.map((line, index) => (
+                  <div className="table-row" role="row" key={`${line}-${index}`}>
+                    <span role="cell">{index + 1}</span>
+                    <span role="cell">—</span>
+                    <span role="cell">—</span>
+                    <span role="cell">—</span>
+                    <span role="cell">—</span>
+                    <span role="cell">—</span>
+                    <span role="cell" className="info-cell">
+                      {line}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="table-row empty" role="row">
+                  <span role="cell" className="info-cell">
+                    Drop a capture to populate the packet list.
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="pane packet-details" aria-label="Packet details">
+            <header>
+              <h2>Packet Details</h2>
+              <span className="pane-subtitle">Summary of parsed metadata</span>
+            </header>
+            <pre>{packetSummary}</pre>
+          </section>
+
+          <section className="pane packet-bytes" aria-label="Packet bytes">
+            <header>
+              <h2>Packet Bytes</h2>
+              <span className="pane-subtitle">Hex &amp; ASCII</span>
+            </header>
+            <pre>{hexDump}</pre>
+          </section>
+
+          {(dragActive || (!hasPacketData && !hasHexData)) && (
+            <div
+              className={`drop-overlay${dragActive ? " active" : ""}`}
+              role="button"
+              tabIndex={0}
+              onClick={onBrowseClick}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onBrowseClick();
+                }
+              }}
+            >
+              <div className="drop-overlay__content">
+                <p className="drop-overlay__title">
+                  Drop packet captures or binary payloads to analyze
+                </p>
+                <button type="button" disabled={!isReady}>
+                  Browse files
+                </button>
+                <p className="drop-overlay__hint">
+                  Supported: pcap, pcapng, bin, dat, raw, txt
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

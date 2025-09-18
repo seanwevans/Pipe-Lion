@@ -5,7 +5,6 @@ export type PacketProcessor = {
 let cachedProcessor: PacketProcessor | null = null;
 let loadPromise: Promise<PacketProcessor> | null = null;
 
-
 const baseUrl = import.meta.env.BASE_URL ?? "/";
 const absoluteBaseUrl =
   typeof window !== "undefined" && window.location
@@ -24,7 +23,8 @@ const resolveAssetUrl = (path: string): string => {
 
 const wasmPath = resolveAssetUrl("./pkg/core_bg.wasm");
 const wasmModule = resolveAssetUrl("./pkg/core.js");
-
+const wasmModulePath = wasmModule.href;
+const wasmBinaryPath = wasmPath.href;
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
@@ -38,12 +38,12 @@ export async function loadProcessor(): Promise<PacketProcessor> {
   if (!loadPromise) {
     loadPromise = (async () => {
       try {
-        const module = (await import(/* @vite-ignore */ wasmModule)) as {
+        const module = (await import(/* @vite-ignore */ wasmModulePath)) as {
           default: InitFn;
           process_packet: (data: Uint8Array) => string;
         };
 
-        await module.default(wasmPath);
+        await module.default(wasmBinaryPath);
         cachedProcessor = { process_packet: module.process_packet };
         return cachedProcessor;
       } catch (error) {
