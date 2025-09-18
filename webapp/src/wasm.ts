@@ -5,8 +5,8 @@ export type PacketProcessor = {
 let cachedProcessor: PacketProcessor | null = null;
 let loadPromise: Promise<PacketProcessor> | null = null;
 
-const wasmPath = new URL("pkg/core_bg.wasm", import.meta.env.BASE_URL);
-const wasmModule = new URL("pkg/core.js", import.meta.env.BASE_URL);
+const wasmPath = new URL("pkg/core_bg.wasm", import.meta.env.BASE_URL).toString();
+const wasmModule = new URL("pkg/core.js", import.meta.env.BASE_URL).toString();
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
