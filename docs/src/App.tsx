@@ -2,6 +2,244 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { loadProcessor } from "./wasm";
 
+type FilterNode =
+  | { type: "text"; value: string }
+  | { type: "and"; left: FilterNode; right: FilterNode }
+  | { type: "or"; left: FilterNode; right: FilterNode }
+  | { type: "not"; operand: FilterNode };
+
+type FilterToken =
+  | { type: "LPAREN" }
+  | { type: "RPAREN" }
+  | { type: "AND" }
+  | { type: "OR" }
+  | { type: "NOT" }
+  | { type: "TEXT"; value: string };
+
+function tokenizeFilter(expression: string): FilterToken[] {
+  const tokens: FilterToken[] = [];
+  let index = 0;
+
+  while (index < expression.length) {
+    const char = expression[index];
+
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+
+    if (char === "(") {
+      tokens.push({ type: "LPAREN" });
+      index += 1;
+      continue;
+    }
+
+    if (char === ")") {
+      tokens.push({ type: "RPAREN" });
+      index += 1;
+      continue;
+    }
+
+    if (char === "&") {
+      if (expression[index + 1] === "&") {
+        tokens.push({ type: "AND" });
+        index += 2;
+        continue;
+      }
+      throw new Error("Unexpected '&'");
+    }
+
+    if (char === "|") {
+      if (expression[index + 1] === "|") {
+        tokens.push({ type: "OR" });
+        index += 2;
+        continue;
+      }
+      throw new Error("Unexpected '|'");
+    }
+
+    if (char === "!") {
+      tokens.push({ type: "NOT" });
+      index += 1;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      const quote = char;
+      index += 1;
+      let value = "";
+      let closed = false;
+
+      while (index < expression.length) {
+        const current = expression[index];
+        if (current === "\\") {
+          index += 1;
+          if (index < expression.length) {
+            value += expression[index];
+            index += 1;
+          }
+          continue;
+        }
+
+        if (current === quote) {
+          closed = true;
+          index += 1;
+          break;
+        }
+
+        value += current;
+        index += 1;
+      }
+
+      if (!closed) {
+        throw new Error("Unterminated quoted string");
+      }
+
+      tokens.push({ type: "TEXT", value });
+      continue;
+    }
+
+    const start = index;
+    while (
+      index < expression.length &&
+      !/\s|\(|\)|&|\||!/u.test(expression[index])
+    ) {
+      index += 1;
+    }
+
+    const raw = expression.slice(start, index);
+    const lowered = raw.toLowerCase();
+
+    if (lowered === "and") {
+      tokens.push({ type: "AND" });
+      continue;
+    }
+
+    if (lowered === "or") {
+      tokens.push({ type: "OR" });
+      continue;
+    }
+
+    if (lowered === "not") {
+      tokens.push({ type: "NOT" });
+      continue;
+    }
+
+    if (raw.length === 0) {
+      continue;
+    }
+
+    tokens.push({ type: "TEXT", value: raw });
+  }
+
+  return tokens;
+}
+
+function parseFilter(tokens: FilterToken[]): FilterNode {
+  let index = 0;
+
+  function parseExpression(): FilterNode {
+    return parseOr();
+  }
+
+  function parseOr(): FilterNode {
+    let node = parseAnd();
+
+    while (index < tokens.length && tokens[index].type === "OR") {
+      index += 1;
+      const right = parseAnd();
+      node = { type: "or", left: node, right };
+    }
+
+    return node;
+  }
+
+  function parseAnd(): FilterNode {
+    let node = parseNot();
+
+    while (index < tokens.length) {
+      const next = tokens[index];
+      if (next.type === "AND") {
+        index += 1;
+        const right = parseNot();
+        node = { type: "and", left: node, right };
+        continue;
+      }
+
+      if (next.type === "OR" || next.type === "RPAREN") {
+        break;
+      }
+
+      if (next.type === "TEXT" || next.type === "LPAREN" || next.type === "NOT") {
+        const right = parseNot();
+        node = { type: "and", left: node, right };
+        continue;
+      }
+
+      throw new Error("Unexpected token");
+    }
+
+    return node;
+  }
+
+  function parseNot(): FilterNode {
+    if (index < tokens.length && tokens[index].type === "NOT") {
+      index += 1;
+      const operand = parseNot();
+      return { type: "not", operand };
+    }
+
+    return parsePrimary();
+  }
+
+  function parsePrimary(): FilterNode {
+    const token = tokens[index];
+    if (!token) {
+      throw new Error("Unexpected end of expression");
+    }
+
+    if (token.type === "TEXT") {
+      index += 1;
+      return { type: "text", value: token.value.toLowerCase() };
+    }
+
+    if (token.type === "LPAREN") {
+      index += 1;
+      const node = parseExpression();
+      if (tokens[index]?.type !== "RPAREN") {
+        throw new Error("Unmatched '('");
+      }
+      index += 1;
+      return node;
+    }
+
+    throw new Error("Expected filter term");
+  }
+
+  const node = parseExpression();
+
+  if (index < tokens.length) {
+    throw new Error("Unexpected trailing tokens");
+  }
+
+  return node;
+}
+
+function evaluateFilter(node: FilterNode, line: string): boolean {
+  switch (node.type) {
+    case "text":
+      return line.includes(node.value);
+    case "and":
+      return evaluateFilter(node.left, line) && evaluateFilter(node.right, line);
+    case "or":
+      return evaluateFilter(node.left, line) || evaluateFilter(node.right, line);
+    case "not":
+      return !evaluateFilter(node.operand, line);
+    default:
+      return true;
+  }
+}
+
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
   for (let i = 0; i < 256; i += 1) {
@@ -67,6 +305,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [maxFileSizeMB, setMaxFileSizeMB] = useState(DEFAULT_MAX_FILE_SIZE_MB);
+  const [filterText, setFilterText] = useState("");
+  const [filterAst, setFilterAst] = useState<FilterNode | null>(null);
+  const [filterError, setFilterError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
@@ -209,12 +450,78 @@ function App() {
     [],
   );
 
+  const onFilterChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      setFilterText(value);
+
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        setFilterAst(null);
+        setFilterError(null);
+        return;
+      }
+
+      try {
+        const tokens = tokenizeFilter(value);
+        if (tokens.length === 0) {
+          setFilterAst(null);
+          setFilterError(null);
+          return;
+        }
+        const node = parseFilter(tokens);
+        setFilterAst(node);
+        setFilterError(null);
+      } catch (err) {
+        console.debug("Failed to parse display filter", err);
+        setFilterAst(null);
+        setFilterError(
+          "Invalid display filter. Use AND/OR/NOT with parentheses or quotes.",
+        );
+      }
+    },
+    [],
+  );
+
   const summaryLines = packetSummary
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const hasPacketData = summaryLines.length > 0;
+  const awaitingPlaceholder =
+    summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
+  const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
+  const totalPackets = baseSummaryLines.length;
+  const activeFilter =
+    filterAst !== null && filterError === null && filterText.trim().length > 0;
+  const visibleSummaryLines =
+    activeFilter && filterAst
+      ? baseSummaryLines.filter((line) =>
+          evaluateFilter(filterAst, line.toLowerCase()),
+        )
+      : baseSummaryLines;
+  const visibleCount = visibleSummaryLines.length;
+  const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
+  const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
+  const hasPacketData = totalPackets > 0;
+  const hasVisiblePackets = visibleCount > 0;
   const hasHexData = hexDump !== "No data loaded.";
+  const packetDetailsText = (() => {
+    if (awaitingPlaceholder) {
+      return "Awaiting packet data.";
+    }
+    if (filterError) {
+      return "Enter a valid display filter to see matching packets.";
+    }
+    if (!hasPacketData) {
+      return "No packet details available.";
+    }
+    if (!hasVisiblePackets) {
+      return activeFilter
+        ? "No packets match the current filter."
+        : "No packet details available.";
+    }
+    return visibleSummaryLines.join("\n");
+  })();
 
   return (
     <div className="app">
@@ -290,21 +597,43 @@ function App() {
               type="text"
               placeholder="tcp && http"
               spellCheck={false}
-              disabled
+              value={filterText}
+              onChange={onFilterChange}
+              aria-invalid={filterError ? true : false}
+              aria-describedby={filterError ? "display-filter-error" : undefined}
             />
           </label>
-          <div className="filter-controls">
-            <label htmlFor="max-file-size">Max file size (MB)</label>
-            <input
-              id="max-file-size"
-              type="number"
-              min={MIN_FILE_SIZE_MB}
-              max={MAX_FILE_SIZE_MB}
-              step={1}
-              value={maxFileSizeMB}
-              onChange={onMaxFileSizeChange}
-              disabled={!isReady}
-            />
+          <div className="filter-right">
+            <div className="filter-meta" aria-live="polite">
+              {filterError ? (
+                <span
+                  id="display-filter-error"
+                  className="filter-error"
+                  role="alert"
+                >
+                  {filterError}
+                </span>
+              ) : (
+                <span className="filter-count">
+                  {activeFilter
+                    ? `Showing ${visibleCount} ${visibleCountLabel} of ${totalPackets} ${totalCountLabel}`
+                    : `Showing ${totalPackets} ${totalCountLabel}`}
+                </span>
+              )}
+            </div>
+            <div className="filter-controls">
+              <label htmlFor="max-file-size">Max file size (MB)</label>
+              <input
+                id="max-file-size"
+                type="number"
+                min={MIN_FILE_SIZE_MB}
+                max={MAX_FILE_SIZE_MB}
+                step={1}
+                value={maxFileSizeMB}
+                onChange={onMaxFileSizeChange}
+                disabled={!isReady}
+              />
+            </div>
           </div>
         </div>
 
@@ -318,7 +647,8 @@ function App() {
             <header>
               <h2>Packet List</h2>
               <span className="pane-subtitle">
-                Showing {hasPacketData ? summaryLines.length : 0} entries
+                Showing {visibleCount}
+                {activeFilter ? ` of ${totalPackets}` : ""} entries
               </span>
             </header>
             <div
@@ -336,23 +666,31 @@ function App() {
                 <span role="columnheader">Info</span>
               </div>
               {hasPacketData ? (
-                summaryLines.map((line, index) => (
-                  <div
-                    className="table-row"
-                    role="row"
-                    key={`${line}-${index}`}
-                  >
-                    <span role="cell">{index + 1}</span>
-                    <span role="cell">—</span>
-                    <span role="cell">—</span>
-                    <span role="cell">—</span>
-                    <span role="cell">—</span>
-                    <span role="cell">—</span>
+                hasVisiblePackets ? (
+                  visibleSummaryLines.map((line, index) => (
+                    <div
+                      className="table-row"
+                      role="row"
+                      key={`${line}-${index}`}
+                    >
+                      <span role="cell">{index + 1}</span>
+                      <span role="cell">—</span>
+                      <span role="cell">—</span>
+                      <span role="cell">—</span>
+                      <span role="cell">—</span>
+                      <span role="cell">—</span>
+                      <span role="cell" className="info-cell">
+                        {line}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="table-row empty" role="row">
                     <span role="cell" className="info-cell">
-                      {line}
+                      No packets match the current filter.
                     </span>
                   </div>
-                ))
+                )
               ) : (
                 <div className="table-row empty" role="row">
                   <span role="cell" className="info-cell">
@@ -368,7 +706,7 @@ function App() {
               <h2>Packet Details</h2>
               <span className="pane-subtitle">Summary of parsed metadata</span>
             </header>
-            <pre>{packetSummary}</pre>
+            <pre>{packetDetailsText}</pre>
           </section>
 
           <section className="pane packet-bytes" aria-label="Packet bytes">
