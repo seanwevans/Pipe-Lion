@@ -4,8 +4,8 @@ export type PacketProcessor = {
 
 let cachedProcessor: PacketProcessor | null = null
 
-const wasmPath = '/pkg/core_bg.wasm'
-const wasmModule = '/pkg/core.js'
+const wasmPath = new URL('pkg/core_bg.wasm', import.meta.env.BASE_URL)
+const wasmModule = new URL('pkg/core.js', import.meta.env.BASE_URL)
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
@@ -16,12 +16,12 @@ export async function loadProcessor(): Promise<PacketProcessor> {
     return cachedProcessor
   }
 
-  const module = (await import(/* @vite-ignore */ wasmModule)) as {
+  const module = (await import(/* @vite-ignore */ wasmModule.href)) as {
     default: InitFn
     process_packet: (data: Uint8Array) => string
   }
 
-  await module.default(wasmPath)
+  await module.default(wasmPath.href)
   cachedProcessor = { process_packet: module.process_packet }
   return cachedProcessor
 }
