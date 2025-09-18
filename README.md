@@ -1,133 +1,76 @@
 # Pipe Lion 🦁
 
-**Pipe Lion** is a high-throughput, browser & WASM‑3.0‑based network capture & packet inspection tool. It does for packet traces what Wireshark does, but runs in-browser, is deterministic, sandboxed, and built for modern workflows.
+**Pipe Lion** is a work-in-progress, browser-first packet inspection playground. The goal is to pair a WebAssembly-powered
+Rust core with a modern web interface so that packet traces can be explored entirely in the browser.
 
 ---
 
-## Table of Contents
-
-- [Why Pipe Lion](#why-pipe-lion)  
-- [Features](#features)  
-- [Architecture](#architecture)  
-- [Getting Started](#getting-started)  
-  - [Prerequisites](#prerequisites)  
-  - [Build & Run (Browser MVP)](#build--run-browser-mvp)  
-- [Usage](#usage)  
-- [Roadmap](#roadmap)  
-- [Contributing](#contributing)  
-- [License](#license)  
-
----
-
-## Why Pipe Lion
-
-- **Portable & browser‑friendly**: No installation required for basic trace analysis; works in modern browsers.  
-- **Deterministic & reproducible**: Using the deterministic profile in Wasm 3.0 ensures identical behavior across devices.  
-- **Sandboxed & safe**: Parsing, filtering, and protocol decoding happens entirely in WebAssembly.  
-- **Extensible**: Plugin/dissector model for adding new protocols without modifying core.  
-
----
-
-## Features
-
-- Offline support for `.pcap` / `.pcapng` file parsing  
-- Packet‑listing, timestamp & interface metadata, raw byte view (hex)  
-- Basic protocol decoders for Ethernet, IPv4/IPv6, TCP, UDP  
-- Filtering/display of packets by basic predicates (length, time, interface)  
-- High performance via Wasm 3.0 features: multiple memories, typed references, potential SIMD/relaxed vector paths  
-- UI: drag‑and‑drop trace upload, table view, hex view, header trees  
-
----
-
-## Architecture
+## Project Layout
 
 ```
-       +------------------+
-       |  Web UI (React)  |
-       +------------------+
-               ↕ WebAssembly
-       +------------------+
-       |  Core Parser &   |
-       |  Dissector Logic |
-       |  (Rust → Wasm‑3.0)|
-       +------------------+
-               ↕ Multiple Memories
-       | - Raw bytes buffer (mem0)     |
-       | - Index / metadata buffer      |
-       | - Parsed headers / fields buf  |
-       +------------------+
+Pipe-Lion/
+├── core/      # Rust library compiled to WebAssembly via wasm-pack
+└── webapp/    # Vite + React frontend that loads the generated core.wasm
 ```
 
-Key pieces:
-- **Core library** in Rust, compiled to `wasm32-unknown-unknown` for browser, and `wasm32-wasi` for CLI/stand‑alone.
-- **Memory layout** using multiple memories to separate raw data, index, parsed fields.
-- **Plugin / component model** for protocol dissectors using typed refs and `call_ref`.
-- **Deterministic profile**: fallback behavior and strict modes to ensure reproducibility.
+The Rust crate exposes a `process_packet` entry point (via `wasm-bindgen`) that the React UI calls whenever a user drops a
+capture or binary payload onto the page. The current implementation only echoes the payload length, but the scaffolding is in
+place for richer parsing and visualization logic.
 
 ---
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
-
-- Rust toolchain  
-- Node.js / npm / yarn / pnpm (for web UI)  
-- Wasm target added:  
+- Rust toolchain with the `wasm32-unknown-unknown` target installed
   ```bash
   rustup target add wasm32-unknown-unknown
-  rustup target add wasm32-wasi
   ```
-
-### Build & Run (Browser MVP)
-
-1. Clone repository:  
-   ```bash
-   git clone https://github.com/yourusername/pipe-lion.git
-   cd pipe-lion
-   ```
-
-2. Build Rust core to Wasm:  
-   ```bash
-   cd core
-   cargo build --release --target wasm32-unknown-unknown
-   ```
-
-3. Copy / link `core.wasm` into `webapp/dist/` (or configure your build tool to do so).
-
-4. Start the web UI:  
-   ```bash
-   cd webapp
-   pnpm install    # or npm / yarn
-   pnpm dev        # or npm run dev
-   ```
-
-5. Open your browser at `http://localhost:3000` (or whatever port), upload a `.pcap`/`.pcapng` file, and enjoy.
+- [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/) for building the library into a browser-friendly bundle
+  ```bash
+  cargo install wasm-pack
+  ```
+- Node.js (>= 18) and npm for the web UI dependencies
 
 ---
 
-## Usage
+## Build the WebAssembly Core
 
-| Action                  | Description |
-|--------------------------|-------------|
-| Drop a trace file        | Upload `.pcap`/`.pcapng` and get packet list with timestamps & lengths |
-| View raw bytes           | Hex‑dump view of each packet |
-| Header tree view         | Expand Ethernet/IP/TCP layers & header fields |
-| Basic filtering          | Length, time range, interface, link type etc. |
-| Export data              | JSON or other formats for downstream processing |
+From the repository root, run:
+
+```bash
+wasm-pack build core --target web --out-dir webapp/public/pkg
+```
+
+This command compiles the `core` crate, generates the accompanying JavaScript bindings, and places the artifacts where the
+frontend can fetch them (`webapp/public/pkg`). Re-run it whenever you change the Rust code.
 
 ---
 
-## Roadmap
+## Run the Web UI
 
-- **v0.x**  
-  ‑ More complete `.pcap` / `.pcapng` support (options, variants, timestamp units)  
-  ‑ Add more protocol dissectors: DNS, HTTP, TLS/QUIC  
-  ‑ Toggle between deterministic & fast (SIMD) modes  
+Install the frontend dependencies and start the development server:
 
-- **v1.0**  
-  ‑ Live capture via sidecar on desktop (Rust native) forwarding frames to browser UI  
-  ‑ Plugin ABI & component model for external dissectors  
+```bash
+cd webapp
+npm install
+npm run dev
+```
 
-- **v2.0+**  
-  ‑ Standalone CLI via WASI for batch trace processing  
-  ‑ Advanced features: session reassembly, decryption (TLS with secrets), filtering language, large‑trace optimizations  
+Vite serves the app at the URL printed in the console (usually `http://localhost:5173`). Drag a `.pcap`, `.pcapng`, or any
+binary blob onto the drop zone to see the stubbed response from the WebAssembly module along with a generated hex preview.
+
+To create a production build, run:
+
+```bash
+npm run build
+```
+
+---
+
+## Development Notes
+
+- The `core` crate is configured with `wasm-bindgen` and exports a `process_packet(data: &[u8]) -> String` helper that will
+  eventually produce structured packet information.
+- The React UI preloads `core.wasm`, handles drag-and-drop uploads, and renders placeholder panes for packet summaries and hex
+  output to make iterating on the Wasm module straightforward.
+- Additional tooling (tests, linting, CI) will be added as the project grows.

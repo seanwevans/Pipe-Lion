@@ -1,0 +1,6 @@
+# Rust
+/core/target/
+
+# Node/Vite
+/webapp/node_modules/
+/webapp/dist/
