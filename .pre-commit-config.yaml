@@ -11,5 +11,5 @@ repos:
     rev: v3.1.0
     hooks:
       - id: prettier
-        files: ^webapp/
-        exclude: ^webapp/node_modules/
+        files: ^docs/
+        exclude: ^docs/node_modules/
