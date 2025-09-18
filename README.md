@@ -2,22 +2,8 @@
 
 # Pipe Lion 🦁
 
-**Pipe Lion** is a work-in-progress, browser-first packet inspection playground. The goal is to pair a WebAssembly-powered
+**Pipe Lion** is a browser-first packet inspection playground. The goal is to pair a WebAssembly-powered
 Rust core with a modern web interface so that packet traces can be explored entirely in the browser.
-
----
-
-## Project Layout
-
-```
-Pipe-Lion/
-├── core/      # Rust library compiled to WebAssembly via wasm-pack
-└── webapp/    # Vite + React frontend that loads the generated core.wasm
-```
-
-The Rust crate exposes a `process_packet` entry point (via `wasm-bindgen`) that the React UI calls whenever a user drops a
-capture or binary payload onto the page. The current implementation only echoes the payload length, but the scaffolding is in
-place for richer parsing and visualization logic.
 
 ---
 
