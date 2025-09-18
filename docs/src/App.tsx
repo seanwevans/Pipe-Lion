@@ -591,6 +591,7 @@ function App() {
         id="file-input"
         type="file"
         accept=".pcap,.pcapng,.bin,.dat,.raw,.txt,application/octet-stream"
+        multiple
         onChange={onFileChange}
         hidden
       />
