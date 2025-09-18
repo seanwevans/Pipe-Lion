@@ -193,7 +193,12 @@ function App() {
         <p className="tagline">
           Experiment with WebAssembly-powered packet parsing.
         </p>
-        <p className="status" data-ready={isReady}>
+        <p
+          className="status"
+          data-ready={isReady}
+          role="status"
+          aria-live="polite"
+        >
           {status}
         </p>
       </header>
@@ -243,7 +248,11 @@ function App() {
         </label>
       </section>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert" aria-live="assertive">
+          {error}
+        </div>
+      )}
 
       <section className="panes">
         <article className="pane">
