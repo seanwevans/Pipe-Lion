@@ -5,6 +5,7 @@ export type PacketProcessor = {
 let cachedProcessor: PacketProcessor | null = null;
 let loadPromise: Promise<PacketProcessor> | null = null;
 
+
 const baseUrl = import.meta.env.BASE_URL ?? "/";
 const absoluteBaseUrl =
   typeof window !== "undefined" && window.location
@@ -23,6 +24,7 @@ const resolveAssetUrl = (path: string): string => {
 
 const wasmPath = resolveAssetUrl("./pkg/core_bg.wasm");
 const wasmModule = resolveAssetUrl("./pkg/core.js");
+
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
