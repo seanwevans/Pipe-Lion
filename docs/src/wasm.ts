@@ -6,25 +6,25 @@ let cachedProcessor: PacketProcessor | null = null;
 let loadPromise: Promise<PacketProcessor> | null = null;
 
 const baseUrl = import.meta.env.BASE_URL ?? "/";
-const absoluteBaseUrl =
+const absoluteBaseUrl: string | URL =
   typeof window !== "undefined" && window.location
-    ? new URL(baseUrl, window.location.origin).toString()
+    ? new URL(baseUrl, window.location.origin)
     : baseUrl;
 
-const resolveAssetUrl = (path: string): string => {
-  const resolved = new URL(path, absoluteBaseUrl).toString();
+const resolveAssetUrl = (path: string): URL => {
+  const resolved = new URL(path, absoluteBaseUrl);
 
   if (import.meta.env.DEV) {
-    console.debug(`[wasm] Resolved ${path} to ${resolved}`);
+    console.debug(`[wasm] Resolved ${path} to ${resolved.href}`);
   }
 
   return resolved;
 };
 
-const wasmPath = resolveAssetUrl("./pkg/core_bg.wasm");
-const wasmModule = resolveAssetUrl("./pkg/core.js");
-const wasmModulePath = wasmModule.href;
-const wasmBinaryPath = wasmPath.href;
+const wasmBinaryUrl = resolveAssetUrl("./pkg/core_bg.wasm");
+const wasmModuleUrl = resolveAssetUrl("./pkg/core.js");
+const wasmModulePath = wasmModuleUrl.href;
+const wasmBinaryPath = wasmBinaryUrl.href;
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
