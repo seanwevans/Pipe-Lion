@@ -73,7 +73,9 @@
   background: rgba(30, 64, 175, 0.35);
   color: #bfdbfe;
   border: 1px solid rgba(96, 165, 250, 0.35);
-  transition: background 0.3s ease, color 0.3s ease;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
 }
 
 .status-chip[data-ready="true"] {
@@ -86,7 +88,11 @@
   display: flex;
   gap: 0.35rem;
   padding: 0.35rem 0.8rem;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(11, 17, 32, 0.95));
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.95),
+    rgba(11, 17, 32, 0.95)
+  );
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
 
@@ -100,7 +106,9 @@
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .menu-bar button:hover {
@@ -139,7 +147,10 @@
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
   box-shadow: 0 8px 16px -12px rgba(59, 130, 246, 0.8);
 }
 
@@ -228,7 +239,11 @@
   display: grid;
   grid-template-rows: 1.15fr 1fr 1.1fr;
   gap: 0.75rem;
-  background: linear-gradient(180deg, rgba(8, 11, 21, 0.95), rgba(5, 8, 17, 0.95));
+  background: linear-gradient(
+    180deg,
+    rgba(8, 11, 21, 0.95),
+    rgba(5, 8, 17, 0.95)
+  );
 }
 
 .workspace.dragging {
@@ -334,8 +349,11 @@
 
 .packet-bytes pre {
   color: #cbd5f5;
-  background: radial-gradient(circle at top left, rgba(15, 23, 42, 0.95),
-      rgba(7, 11, 22, 0.95));
+  background: radial-gradient(
+    circle at top left,
+    rgba(15, 23, 42, 0.95),
+    rgba(7, 11, 22, 0.95)
+  );
   text-shadow: 0 0 6px rgba(37, 99, 235, 0.4);
 }
 
@@ -350,7 +368,9 @@
   border-radius: 14px;
   backdrop-filter: blur(4px);
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
   z-index: 5;
 }
 

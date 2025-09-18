@@ -261,11 +261,7 @@ function App() {
 
         <div className="toolbar">
           <div className="toolbar-buttons">
-            <button
-              type="button"
-              onClick={onBrowseClick}
-              disabled={!isReady}
-            >
+            <button type="button" onClick={onBrowseClick} disabled={!isReady}>
               Open Capture…
             </button>
             <button type="button" disabled>
@@ -325,7 +321,11 @@ function App() {
                 Showing {hasPacketData ? summaryLines.length : 0} entries
               </span>
             </header>
-            <div className="packet-table" role="table" aria-label="Captured packets">
+            <div
+              className="packet-table"
+              role="table"
+              aria-label="Captured packets"
+            >
               <div className="table-row table-header" role="row">
                 <span role="columnheader">No.</span>
                 <span role="columnheader">Time</span>
@@ -337,7 +337,11 @@ function App() {
               </div>
               {hasPacketData ? (
                 summaryLines.map((line, index) => (
-                  <div className="table-row" role="row" key={`${line}-${index}`}>
+                  <div
+                    className="table-row"
+                    role="row"
+                    key={`${line}-${index}`}
+                  >
                     <span role="cell">{index + 1}</span>
                     <span role="cell">—</span>
                     <span role="cell">—</span>
