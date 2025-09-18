@@ -2,5 +2,5 @@
 /core/target/
 
 # Node/Vite
-/webapp/node_modules/
-/webapp/dist/
+/docs/node_modules/
+/docs/dist/
