@@ -311,15 +311,30 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      uploadTokenRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     loadProcessor()
       .then(() => {
+        if (!isMountedRef.current) {
+          return;
+        }
         setIsReady(true);
         setStatus("Drop packet captures or binary payloads to analyze.");
       })
       .catch((err) => {
         console.error("Failed to load Wasm module", err);
+        if (!isMountedRef.current) {
+          return;
+        }
         setError("Unable to load the WebAssembly packet processor.");
         setStatus("Reload the page or check the Wasm build output.");
       });
@@ -332,16 +347,34 @@ function App() {
       if (file.size > maxBytes) {
         const fileSizeMB = file.size / BYTES_PER_MEGABYTE;
         const formattedFileSize = fileSizeMB.toFixed(fileSizeMB >= 10 ? 0 : 2);
+        if (!isMountedRef.current) {
+          return;
+        }
         setError(
           `${file.name} is ${formattedFileSize} MB, which exceeds the configured limit of ${maxFileSizeMB} MB.`,
         );
+        if (!isMountedRef.current) {
+          return;
+        }
         setStatus("Choose a smaller file or increase the max file size limit.");
+        if (!isMountedRef.current) {
+          return;
+        }
         setPacketSummary("Awaiting packet data.");
+        if (!isMountedRef.current) {
+          return;
+        }
         setHexDump("No data loaded.");
         return;
       }
 
+      if (!isMountedRef.current) {
+        return;
+      }
       setStatus(`Processing ${file.name} (${file.size} bytes)…`);
+      if (!isMountedRef.current) {
+        return;
+      }
       setError(null);
 
       try {
@@ -359,19 +392,43 @@ function App() {
         if (uploadTokenRef.current !== token) {
           return;
         }
+        if (!isMountedRef.current) {
+          return;
+        }
         setPacketSummary(summary);
+        if (!isMountedRef.current) {
+          return;
+        }
         setHexDump(formatHex(bytes));
+        if (!isMountedRef.current) {
+          return;
+        }
         setStatus(`Processed ${file.name}.`);
+        if (!isMountedRef.current) {
+          return;
+        }
         setError(null);
       } catch (err) {
         console.error("Processing failed", err);
         if (uploadTokenRef.current !== token) {
           return;
         }
+        if (!isMountedRef.current) {
+          return;
+        }
         setError("Failed to process the uploaded file.");
 
+        if (!isMountedRef.current) {
+          return;
+        }
         setStatus("Drop a packet capture or binary payload to analyze.");
+        if (!isMountedRef.current) {
+          return;
+        }
         setPacketSummary("Awaiting packet data.");
+        if (!isMountedRef.current) {
+          return;
+        }
         setHexDump("No data loaded.");
       }
     },
@@ -490,16 +547,20 @@ function App() {
   const awaitingPlaceholder =
     summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
   const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-  const totalPackets = baseSummaryLines.length;
+  const baseSummaryEntries = baseSummaryLines.map((text, index) => ({
+    text,
+    originalIndex: index,
+  }));
+  const totalPackets = baseSummaryEntries.length;
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const visibleSummaryLines =
+  const visibleSummaryEntries =
     activeFilter && filterAst
-      ? baseSummaryLines.filter((line) =>
-          evaluateFilter(filterAst, line.toLowerCase()),
+      ? baseSummaryEntries.filter((entry) =>
+          evaluateFilter(filterAst, entry.text.toLowerCase()),
         )
-      : baseSummaryLines;
-  const visibleCount = visibleSummaryLines.length;
+      : baseSummaryEntries;
+  const visibleCount = visibleSummaryEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
   const hasPacketData = totalPackets > 0;
@@ -520,7 +581,7 @@ function App() {
         ? "No packets match the current filter."
         : "No packet details available.";
     }
-    return visibleSummaryLines.join("\n");
+    return visibleSummaryEntries.map((entry) => entry.text).join("\n");
   })();
 
   return (
@@ -667,20 +728,20 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visibleSummaryLines.map((line, index) => (
+                  visibleSummaryEntries.map(({ text, originalIndex }) => (
                     <div
                       className="table-row"
                       role="row"
-                      key={`${line}-${index}`}
+                      key={`${originalIndex}-${text}`}
                     >
-                      <span role="cell">{index + 1}</span>
+                      <span role="cell">{originalIndex + 1}</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell" className="info-cell">
-                        {line}
+                        {text}
                       </span>
                     </div>
                   ))

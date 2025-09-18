@@ -7,6 +7,7 @@ let loadPromise: Promise<PacketProcessor> | null = null;
 
 const baseUrl = import.meta.env.BASE_URL ?? "/";
 
+
 const resolveOrigin = (): string => {
   if (typeof window !== "undefined" && window.location) {
     return window.location.origin;
@@ -22,6 +23,7 @@ const resolveOrigin = (): string => {
 const absoluteBaseUrl = new URL(baseUrl, resolveOrigin());
 
 export const resolveAssetUrl = (path: string): URL => {
+
   const resolved = new URL(path, absoluteBaseUrl);
 
   if (import.meta.env.DEV) {
@@ -31,10 +33,10 @@ export const resolveAssetUrl = (path: string): URL => {
   return resolved;
 };
 
-const wasmPath = resolveAssetUrl("./pkg/core_bg.wasm");
-const wasmModule = resolveAssetUrl("./pkg/core.js");
-const wasmModulePath = wasmModule.href;
-const wasmBinaryPath = wasmPath.href;
+const wasmBinaryUrl = resolveAssetUrl("./pkg/core_bg.wasm");
+const wasmModuleUrl = resolveAssetUrl("./pkg/core.js");
+const wasmModulePath = wasmModuleUrl.href;
+const wasmBinaryPath = wasmBinaryUrl.href;
 
 type InitFn = (
   input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module,
