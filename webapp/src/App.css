@@ -49,6 +49,12 @@
   cursor: pointer;
 }
 
+.drop-zone:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25);
+}
+
 .drop-zone.active {
   border-color: #2563eb;
   background: #eff6ff;
@@ -90,6 +96,39 @@
 .browse-button:not(:disabled):hover {
   background: #1d4ed8;
   transform: translateY(-1px);
+}
+
+.settings {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+}
+
+.settings__item input {
+  width: 5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5f5;
+  font-size: 0.95rem;
+}
+
+.settings__item input:disabled {
+  background: #e2e8f0;
+  cursor: not-allowed;
 }
 
 .error {
