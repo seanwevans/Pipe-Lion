@@ -1,3 +1,5 @@
+<div align="center"><img src="logo.png" width="300" align="center"></div>
+
 # Pipe Lion 🦁
 
 **Pipe Lion** is a work-in-progress, browser-first packet inspection playground. The goal is to pair a WebAssembly-powered
