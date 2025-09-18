@@ -150,6 +150,16 @@ function App() {
     fileInputRef.current?.click()
   }, [])
 
+  const onDropZoneKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        onBrowseClick()
+      }
+    },
+    [onBrowseClick],
+  )
+
   const onMaxFileSizeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const parsedValue = Number(event.target.value)
     if (Number.isNaN(parsedValue)) {
@@ -175,6 +185,9 @@ function App() {
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
+        onKeyDown={onDropZoneKeyDown}
+        role="button"
+        tabIndex={0}
       >
         <input
           ref={fileInputRef}
