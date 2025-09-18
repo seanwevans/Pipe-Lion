@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { loadProcessor } from './wasm'
 
+const BYTE_TO_HEX = (() => {
+  const table = new Array<string>(256)
+  for (let i = 0; i < 256; i += 1) {
+    table[i] = i.toString(16).padStart(2, '0')
+  }
+  return table
+})()
+
 function formatHex(
   data: Uint8Array,
   bytesPerRow = 16,
@@ -13,19 +21,23 @@ function formatHex(
 
   const lines: string[] = []
   const maxBytes = bytesPerRow * maxRows
-  const view = data.slice(0, maxBytes)
+  const view = data.subarray(0, Math.min(maxBytes, data.length))
+  const hexPadLength = bytesPerRow * 3 - 1
 
   for (let offset = 0; offset < view.length; offset += bytesPerRow) {
-    const chunk = view.slice(offset, offset + bytesPerRow)
-    const hex = Array.from(chunk)
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join(' ')
-    const ascii = Array.from(chunk)
-      .map((byte) => (byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.'))
-      .join('')
+    const rowLength = Math.min(bytesPerRow, view.length - offset)
+    let hexLine = ''
+    let asciiLine = ''
+
+    for (let index = 0; index < rowLength; index += 1) {
+      const byte = view[offset + index]
+      const hex = BYTE_TO_HEX[byte]
+      hexLine += index === 0 ? hex : ` ${hex}`
+      asciiLine += byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.'
+    }
 
     lines.push(
-      `${offset.toString(16).padStart(8, '0')}  ${hex.padEnd(bytesPerRow * 3 - 1, ' ')}  |${ascii}|`,
+      `${offset.toString(16).padStart(8, '0')}  ${hexLine.padEnd(hexPadLength, ' ')}  |${asciiLine}|`,
     )
   }
 
