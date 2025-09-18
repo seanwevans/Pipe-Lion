@@ -547,16 +547,20 @@ function App() {
   const awaitingPlaceholder =
     summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
   const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-  const totalPackets = baseSummaryLines.length;
+  const baseSummaryEntries = baseSummaryLines.map((text, index) => ({
+    text,
+    originalIndex: index,
+  }));
+  const totalPackets = baseSummaryEntries.length;
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const visibleSummaryLines =
+  const visibleSummaryEntries =
     activeFilter && filterAst
-      ? baseSummaryLines.filter((line) =>
-          evaluateFilter(filterAst, line.toLowerCase()),
+      ? baseSummaryEntries.filter((entry) =>
+          evaluateFilter(filterAst, entry.text.toLowerCase()),
         )
-      : baseSummaryLines;
-  const visibleCount = visibleSummaryLines.length;
+      : baseSummaryEntries;
+  const visibleCount = visibleSummaryEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
   const hasPacketData = totalPackets > 0;
@@ -577,7 +581,7 @@ function App() {
         ? "No packets match the current filter."
         : "No packet details available.";
     }
-    return visibleSummaryLines.join("\n");
+    return visibleSummaryEntries.map((entry) => entry.text).join("\n");
   })();
 
   return (
@@ -724,20 +728,20 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visibleSummaryLines.map((line, index) => (
+                  visibleSummaryEntries.map(({ text, originalIndex }) => (
                     <div
                       className="table-row"
                       role="row"
-                      key={`${line}-${index}`}
+                      key={`${originalIndex}-${text}`}
                     >
-                      <span role="cell">{index + 1}</span>
+                      <span role="cell">{originalIndex + 1}</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell">—</span>
                       <span role="cell" className="info-cell">
-                        {line}
+                        {text}
                       </span>
                     </div>
                   ))
