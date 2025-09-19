@@ -5,6 +5,7 @@ import {
   parseFilter,
   tokenizeFilter,
   type FilterNode,
+  type PacketRecord,
 } from "./filter";
 import { loadProcessor, type PacketRecord } from "./wasm";
 
@@ -62,6 +63,144 @@ const MAX_FILE_SIZE_MB = 500;
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
+
+function toOptionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
+}
+
+function toOptionalNumericLike(value: unknown): string | number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? "1" : "0";
+  }
+  return undefined;
+}
+
+function parsePacketSummaryLine(line: string): PacketRecord {
+  const trimmed = line.trim();
+  const record: PacketRecord = { info: trimmed, summary: trimmed };
+
+  if (trimmed.length === 0) {
+    return record;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return record;
+    }
+
+    const data = parsed as Record<string, unknown>;
+
+    const infoValue =
+      toOptionalString(data.info) ??
+      toOptionalString(data.Info) ??
+      toOptionalString(data.summary) ??
+      toOptionalString(data.Summary);
+    if (infoValue) {
+      record.info = infoValue;
+    }
+
+    const summaryValue =
+      toOptionalString(data.summary) ?? toOptionalString(data.Summary);
+    if (summaryValue) {
+      record.summary = summaryValue;
+    }
+
+    const timeValue =
+      toOptionalString(data.time) ??
+      toOptionalString(data.timestamp) ??
+      toOptionalString(data.Time) ??
+      toOptionalString(data.Timestamp);
+    if (timeValue) {
+      record.time = timeValue;
+    }
+
+    const srcValue =
+      toOptionalString(data.src) ??
+      toOptionalString(data.source) ??
+      toOptionalString(data.Source);
+    if (srcValue) {
+      record.src = srcValue;
+    }
+
+    const dstValue =
+      toOptionalString(data.dst) ??
+      toOptionalString(data.destination) ??
+      toOptionalString(data.Dst) ??
+      toOptionalString(data.Destination);
+    if (dstValue) {
+      record.dst = dstValue;
+    }
+
+    const protocolValue =
+      toOptionalString(data.protocol) ??
+      toOptionalString(data.proto) ??
+      toOptionalString(data.Protocol) ??
+      toOptionalString(data.Proto);
+    if (protocolValue) {
+      record.protocol = protocolValue;
+    }
+
+    const lengthValue =
+      toOptionalNumericLike(data.length) ??
+      toOptionalNumericLike(data.len) ??
+      toOptionalNumericLike(data.size) ??
+      toOptionalNumericLike(data.Length) ??
+      toOptionalNumericLike(data.Len) ??
+      toOptionalNumericLike(data.Size);
+    if (lengthValue !== undefined) {
+      record.length = lengthValue;
+    }
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      if (key in record) {
+        continue;
+      }
+      if (typeof value === "string" || typeof value === "number") {
+        record[key] = value;
+        continue;
+      }
+      if (typeof value === "boolean") {
+        record[key] = value ? "true" : "false";
+      }
+    }
+
+    record.summary ??= record.info;
+    return record;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug("Failed to parse packet summary line", error);
+    }
+  }
+
+  return record;
+}
+
+type PacketSummaryEntry = {
+  record: PacketRecord;
+  originalIndex: number;
+};
 
 function App() {
   const [status, setStatus] = useState(
@@ -371,7 +510,9 @@ function App() {
     [],
   );
 
+
   const totalPackets = packets.length;
+
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
   const searchablePackets = useMemo(
@@ -394,8 +535,10 @@ function App() {
   );
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
+
       return searchablePackets.filter((entry) =>
         evaluateFilter(filterAst, entry.searchableText),
+
       );
     }
     return searchablePackets;
@@ -484,6 +627,7 @@ function App() {
         ? "No packets match the current filter."
         : "No packet data loaded.";
     }
+
     if (!displayedPacket) {
       return "Select a packet to view its payload.";
     }
@@ -526,6 +670,7 @@ function App() {
     },
     [selectedPacketIndex, setSelectedPacketIndex, visibleIndices],
   );
+
 
   return (
     <div className="app">
@@ -676,6 +821,7 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
+
                   visiblePacketEntries.map(({ packet, index }) => {
                     const isSelected = index === selectedPacketIndex;
                     return (
@@ -706,6 +852,7 @@ function App() {
                       </div>
                     );
                   })
+
                 ) : (
                   <div className="table-row empty" role="row">
                     <span role="cell" className="info-cell">
