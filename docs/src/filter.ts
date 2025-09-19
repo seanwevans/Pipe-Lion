@@ -1,5 +1,22 @@
+export type PacketRecord = {
+  time?: string;
+  src?: string;
+  dst?: string;
+  protocol?: string;
+  length?: string | number;
+  info: string;
+  summary?: string;
+  [key: string]: string | number | undefined;
+};
+
 export type FilterNode =
   | { type: "text"; value: string }
+  | {
+      type: "comparison";
+      field: string;
+      operator: "eq" | "contains";
+      value: string;
+    }
   | { type: "and"; left: FilterNode; right: FilterNode }
   | { type: "or"; left: FilterNode; right: FilterNode }
   | { type: "not"; operand: FilterNode };
@@ -10,6 +27,8 @@ export type FilterToken =
   | { type: "AND" }
   | { type: "OR" }
   | { type: "NOT" }
+  | { type: "EQ" }
+  | { type: "CONTAINS" }
   | { type: "TEXT"; value: string };
 
 export function tokenizeFilter(expression: string): FilterToken[] {
@@ -60,6 +79,15 @@ export function tokenizeFilter(expression: string): FilterToken[] {
       continue;
     }
 
+    if (char === "=") {
+      if (expression[index + 1] === "=") {
+        tokens.push({ type: "EQ" });
+        index += 2;
+        continue;
+      }
+      throw new Error("Unexpected '='");
+    }
+
     if (char === '"' || char === "'") {
       const quote = char;
       index += 1;
@@ -98,7 +126,7 @@ export function tokenizeFilter(expression: string): FilterToken[] {
     const start = index;
     while (
       index < expression.length &&
-      !/\s|\(|\)|&|\||!/u.test(expression[index])
+      !/\s|\(|\)|&|\||!|=/u.test(expression[index])
     ) {
       index += 1;
     }
@@ -118,6 +146,11 @@ export function tokenizeFilter(expression: string): FilterToken[] {
 
     if (lowered === "not") {
       tokens.push({ type: "NOT" });
+      continue;
+    }
+
+    if (lowered === "contains") {
+      tokens.push({ type: "CONTAINS" });
       continue;
     }
 
@@ -199,6 +232,20 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
     }
 
     if (token.type === "TEXT") {
+      const next = tokens[index + 1];
+      if (next && (next.type === "EQ" || next.type === "CONTAINS")) {
+        const valueToken = tokens[index + 2];
+        if (!valueToken || valueToken.type !== "TEXT") {
+          throw new Error("Expected comparison value");
+        }
+
+        const operator = next.type === "EQ" ? "eq" : "contains";
+        const field = token.value.toLowerCase();
+        const value = valueToken.value;
+        index += 3;
+        return { type: "comparison", field, operator, value };
+      }
+
       index += 1;
       return { type: "text", value: token.value.toLowerCase() };
     }
@@ -225,20 +272,68 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
   return node;
 }
 
-export function evaluateFilter(node: FilterNode, line: string): boolean {
+const FIELD_ALIASES: Record<string, string[]> = {
+  src: ["src", "source"],
+  source: ["src", "source"],
+  dst: ["dst", "destination"],
+  destination: ["dst", "destination"],
+  protocol: ["protocol"],
+  proto: ["protocol"],
+  time: ["time", "timestamp"],
+  timestamp: ["time", "timestamp"],
+  length: ["length", "len", "size"],
+  len: ["length", "len", "size"],
+  size: ["length", "len", "size"],
+  info: ["info", "summary"],
+  summary: ["summary", "info"],
+};
+
+function resolveFieldValue(
+  packet: PacketRecord,
+  field: string,
+): string | number | undefined {
+  const candidates = FIELD_ALIASES[field] ?? [field];
+  for (const candidate of candidates) {
+    const value = packet[candidate];
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function evaluateFilter(
+  node: FilterNode,
+  packet: PacketRecord,
+): boolean {
   switch (node.type) {
     case "text":
-      return line.includes(node.value);
+      return packet.info.toLowerCase().includes(node.value);
+    case "comparison": {
+      const value = resolveFieldValue(packet, node.field);
+      if (value === undefined) {
+        return false;
+      }
+      const haystack = String(value).toLowerCase();
+      const needle = node.value.toLowerCase();
+      if (node.operator === "eq") {
+        return haystack === needle;
+      }
+      if (node.operator === "contains") {
+        return haystack.includes(needle);
+      }
+      return false;
+    }
     case "and":
       return (
-        evaluateFilter(node.left, line) && evaluateFilter(node.right, line)
+        evaluateFilter(node.left, packet) && evaluateFilter(node.right, packet)
       );
     case "or":
       return (
-        evaluateFilter(node.left, line) || evaluateFilter(node.right, line)
+        evaluateFilter(node.left, packet) || evaluateFilter(node.right, packet)
       );
     case "not":
-      return !evaluateFilter(node.operand, line);
+      return !evaluateFilter(node.operand, packet);
     default:
       return true;
   }
