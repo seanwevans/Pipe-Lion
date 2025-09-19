@@ -77,9 +77,7 @@ function toOptionalString(value: unknown): string | undefined {
   return undefined;
 }
 
-function toOptionalNumericLike(
-  value: unknown,
-): string | number | undefined {
+function toOptionalNumericLike(value: unknown): string | number | undefined {
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -505,10 +503,12 @@ function App() {
     summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
   const baseSummaryEntries = useMemo(() => {
     const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-    return baseSummaryLines.map((line, index): PacketSummaryEntry => ({
-      record: parsePacketSummaryLine(line),
-      originalIndex: index,
-    }));
+    return baseSummaryLines.map(
+      (line, index): PacketSummaryEntry => ({
+        record: parsePacketSummaryLine(line),
+        originalIndex: index,
+      }),
+    );
   }, [awaitingPlaceholder, summaryLines]);
   const totalPackets = baseSummaryEntries.length;
   const activeFilter =

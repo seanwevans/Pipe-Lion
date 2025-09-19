@@ -302,7 +302,10 @@ function resolveFieldValue(
   return undefined;
 }
 
-export function evaluateFilter(node: FilterNode, packet: PacketRecord): boolean {
+export function evaluateFilter(
+  node: FilterNode,
+  packet: PacketRecord,
+): boolean {
   switch (node.type) {
     case "text":
       return packet.info.toLowerCase().includes(node.value);

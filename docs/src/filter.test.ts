@@ -17,9 +17,7 @@ const makePacket = (overrides: Partial<PacketRecord>): PacketRecord => {
 describe("filter helpers", () => {
   it("parses and evaluates explicit AND expressions", () => {
     const ast = parseFilter(tokenizeFilter("foo && bar"));
-    expect(evaluateFilter(ast, makePacket({ info: "foo and bar" }))).toBe(
-      true,
-    );
+    expect(evaluateFilter(ast, makePacket({ info: "foo and bar" }))).toBe(true);
     expect(evaluateFilter(ast, makePacket({ info: "foo only" }))).toBe(false);
     expect(evaluateFilter(ast, makePacket({ info: "bar only" }))).toBe(false);
   });
@@ -38,9 +36,7 @@ describe("filter helpers", () => {
 
   it("supports quoted phrases", () => {
     const ast = parseFilter(tokenizeFilter('"foo bar" baz'));
-    expect(evaluateFilter(ast, makePacket({ info: "foo bar baz" }))).toBe(
-      true,
-    );
+    expect(evaluateFilter(ast, makePacket({ info: "foo bar baz" }))).toBe(true);
     expect(evaluateFilter(ast, makePacket({ info: "foo qux baz" }))).toBe(
       false,
     );
@@ -84,7 +80,9 @@ describe("filter helpers", () => {
 
   it("supports negations and boolean combinations with comparisons", () => {
     const ast = parseFilter(
-      tokenizeFilter('!(protocol == "udp") && (dst contains 8.8 || info contains handshake)'),
+      tokenizeFilter(
+        '!(protocol == "udp") && (dst contains 8.8 || info contains handshake)',
+      ),
     );
     const packet = makePacket({
       info: "TLS handshake to 8.8.8.8",
@@ -102,7 +100,7 @@ describe("filter helpers", () => {
   });
 
   it("falls back to searching the Info column when a field is missing", () => {
-    const ast = parseFilter(tokenizeFilter('dst contains example || request'));
+    const ast = parseFilter(tokenizeFilter("dst contains example || request"));
     const packet = makePacket({ info: "HTTP request to example.com" });
     expect(evaluateFilter(ast, packet)).toBe(true);
 
