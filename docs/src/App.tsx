@@ -6,7 +6,7 @@ import {
   tokenizeFilter,
   type FilterNode,
 } from "./filter";
-import { loadProcessor } from "./wasm";
+import { loadProcessor, type PacketRecord } from "./wasm";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -67,8 +67,10 @@ function App() {
   const [status, setStatus] = useState(
     "Drop packet captures or binary payloads to analyze.",
   );
-  const [packetSummary, setPacketSummary] = useState("Awaiting packet data.");
-  const [hexDump, setHexDump] = useState("No data loaded.");
+  const [packets, setPackets] = useState<PacketRecord[]>([]);
+  const [selectedPacketIndex, setSelectedPacketIndex] = useState<number | null>(
+    null,
+  );
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -172,11 +174,11 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setPacketSummary("Awaiting packet data.");
+        setPackets([]);
         if (!isMountedRef.current) {
           return;
         }
-        setHexDump("No data loaded.");
+        setSelectedPacketIndex(null);
         return;
       }
 
@@ -198,7 +200,10 @@ function App() {
         if (uploadTokenRef.current !== token) {
           return;
         }
-        const summary = processor.process_packet(bytes);
+        const result = processor.process_packet(bytes);
+        const processedPackets = Array.isArray(result.packets)
+          ? result.packets
+          : [];
 
         if (uploadTokenRef.current !== token) {
           return;
@@ -206,19 +211,33 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setPacketSummary(summary);
+        setPackets(processedPackets);
         if (!isMountedRef.current) {
           return;
         }
-        setHexDump(formatHex(bytes));
+        setSelectedPacketIndex(
+          processedPackets.length > 0 ? 0 : null,
+        );
         if (!isMountedRef.current) {
           return;
         }
-        setStatus(`Processed ${file.name}.`);
+        const processedCountLabel =
+          processedPackets.length === 1 ? "packet" : "packets";
+        setStatus(
+          processedPackets.length > 0
+            ? `Parsed ${processedPackets.length} ${processedCountLabel} from ${file.name}.`
+            : `No packets parsed from ${file.name}.`,
+        );
         if (!isMountedRef.current) {
           return;
         }
-        setError(null);
+        if (result.errors.length > 0) {
+          setError(result.errors.join(" \u2022 "));
+        } else if (result.warnings.length > 0) {
+          setError(result.warnings.join(" \u2022 "));
+        } else {
+          setError(null);
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return;
@@ -239,11 +258,11 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setPacketSummary("Awaiting packet data.");
+        setPackets([]);
         if (!isMountedRef.current) {
           return;
         }
-        setHexDump("No data loaded.");
+        setSelectedPacketIndex(null);
       }
     },
     [maxFileSizeMB, readFileBytes],
@@ -354,55 +373,155 @@ function App() {
     [],
   );
 
-  const summaryLines = useMemo(() => {
-    return packetSummary
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-  }, [packetSummary]);
-  const awaitingPlaceholder =
-    summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
-  const baseSummaryEntries = useMemo(() => {
-    const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-    return baseSummaryLines.map((text, index) => ({
-      text,
-      originalIndex: index,
-    }));
-  }, [awaitingPlaceholder, summaryLines]);
-  const totalPackets = baseSummaryEntries.length;
+  const totalPackets = packets.length;
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const visibleSummaryEntries = useMemo(() => {
+  const searchablePackets = useMemo(
+    () =>
+      packets.map((packet, index) => ({
+        packet,
+        index,
+        searchableText: [
+          packet.time,
+          packet.source,
+          packet.destination,
+          packet.protocol,
+          String(packet.length),
+          packet.info,
+        ]
+          .join(" ")
+          .toLowerCase(),
+      })),
+    [packets],
+  );
+  const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
-      return baseSummaryEntries.filter((entry) =>
-        evaluateFilter(filterAst, entry.text.toLowerCase()),
+      return searchablePackets.filter((entry) =>
+        evaluateFilter(filterAst, entry.searchableText),
       );
     }
-    return baseSummaryEntries;
-  }, [activeFilter, baseSummaryEntries, filterAst, filterError, filterText]);
-  const visibleCount = visibleSummaryEntries.length;
+    return searchablePackets;
+  }, [activeFilter, filterAst, searchablePackets]);
+  const visibleCount = visiblePacketEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
   const hasPacketData = totalPackets > 0;
   const hasVisiblePackets = visibleCount > 0;
-  const hasHexData = hexDump !== "No data loaded.";
-  const packetDetailsText = (() => {
-    if (awaitingPlaceholder) {
-      return "Awaiting packet data.";
+  const visibleIndices = useMemo(
+    () => visiblePacketEntries.map((entry) => entry.index),
+    [visiblePacketEntries],
+  );
+
+  useEffect(() => {
+    if (!hasPacketData) {
+      if (selectedPacketIndex !== null) {
+        setSelectedPacketIndex(null);
+      }
+      return;
     }
+
+    if (visibleIndices.length === 0) {
+      return;
+    }
+
+    if (
+      selectedPacketIndex === null ||
+      !visibleIndices.includes(selectedPacketIndex)
+    ) {
+      setSelectedPacketIndex(visibleIndices[0]);
+    }
+  }, [hasPacketData, selectedPacketIndex, setSelectedPacketIndex, visibleIndices]);
+
+  const selectedPacket =
+    selectedPacketIndex !== null ? packets[selectedPacketIndex] ?? null : null;
+  const isSelectedPacketVisible =
+    selectedPacketIndex !== null && visibleIndices.includes(selectedPacketIndex);
+  const displayedPacket = isSelectedPacketVisible ? selectedPacket : null;
+
+  const packetDetailsText = useMemo(() => {
     if (filterError) {
       return "Enter a valid display filter to see matching packets.";
     }
     if (!hasPacketData) {
-      return "No packet details available.";
+      return "No packet data loaded.";
     }
     if (!hasVisiblePackets) {
       return activeFilter
         ? "No packets match the current filter."
-        : "No packet details available.";
+        : "No packet data loaded.";
     }
-    return visibleSummaryEntries.map((entry) => entry.text).join("\n");
-  })();
+    if (!displayedPacket) {
+      return "Select a packet to view details.";
+    }
+
+    return [
+      `Time: ${displayedPacket.time}`,
+      `Source: ${displayedPacket.source}`,
+      `Destination: ${displayedPacket.destination}`,
+      `Protocol: ${displayedPacket.protocol}`,
+      `Length: ${displayedPacket.length}`,
+      "",
+      displayedPacket.info,
+    ].join("\n");
+  }, [
+    activeFilter,
+    displayedPacket,
+    filterError,
+    hasPacketData,
+    hasVisiblePackets,
+  ]);
+
+  const hexDump = useMemo(() => {
+    if (!hasPacketData) {
+      return "No data loaded.";
+    }
+    if (!hasVisiblePackets) {
+      return activeFilter
+        ? "No packets match the current filter."
+        : "No packet data loaded.";
+    }
+    if (!displayedPacket) {
+      return "Select a packet to view its payload.";
+    }
+    if (displayedPacket.payload.length === 0) {
+      return "Packet payload is empty.";
+    }
+
+    return formatHex(displayedPacket.payload);
+  }, [activeFilter, displayedPacket, hasPacketData, hasVisiblePackets]);
+
+  const showDropOverlay = dragActive || !hasPacketData;
+
+  const onPacketTableKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (visibleIndices.length === 0) {
+        return;
+      }
+
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const currentPosition =
+          selectedPacketIndex !== null
+            ? visibleIndices.indexOf(selectedPacketIndex)
+            : -1;
+
+        if (event.key === "ArrowDown") {
+          const nextPosition =
+            currentPosition === -1
+              ? 0
+              : Math.min(currentPosition + 1, visibleIndices.length - 1);
+          setSelectedPacketIndex(visibleIndices[nextPosition]);
+        } else {
+          const nextPosition =
+            currentPosition === -1
+              ? visibleIndices.length - 1
+              : Math.max(currentPosition - 1, 0);
+          setSelectedPacketIndex(visibleIndices[nextPosition]);
+        }
+      }
+    },
+    [selectedPacketIndex, setSelectedPacketIndex, visibleIndices],
+  );
 
   return (
     <div className="app">
@@ -539,6 +658,8 @@ function App() {
               className="packet-table"
               role="table"
               aria-label="Captured packets"
+              tabIndex={0}
+              onKeyDown={onPacketTableKeyDown}
             >
               <div className="table-row table-header" role="row">
                 <span role="columnheader">No.</span>
@@ -551,23 +672,36 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visibleSummaryEntries.map(({ text, originalIndex }) => (
-                    <div
-                      className="table-row"
-                      role="row"
-                      key={`${originalIndex}-${text}`}
-                    >
-                      <span role="cell">{originalIndex + 1}</span>
-                      <span role="cell">—</span>
-                      <span role="cell">—</span>
-                      <span role="cell">—</span>
-                      <span role="cell">—</span>
-                      <span role="cell">—</span>
-                      <span role="cell" className="info-cell">
-                        {text}
-                      </span>
-                    </div>
-                  ))
+                  visiblePacketEntries.map(({ packet, index }) => {
+                    const isSelected = index === selectedPacketIndex;
+                    return (
+                      <div
+                        className={`table-row${isSelected ? " selected" : ""}`}
+                        role="row"
+                        key={`packet-${index}`}
+                        tabIndex={0}
+                        data-selected={isSelected || undefined}
+                        aria-selected={isSelected}
+                        onClick={() => setSelectedPacketIndex(index)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedPacketIndex(index);
+                          }
+                        }}
+                      >
+                        <span role="cell">{index + 1}</span>
+                        <span role="cell">{packet.time}</span>
+                        <span role="cell">{packet.source}</span>
+                        <span role="cell">{packet.destination}</span>
+                        <span role="cell">{packet.protocol}</span>
+                        <span role="cell">{packet.length}</span>
+                        <span role="cell" className="info-cell">
+                          {packet.info}
+                        </span>
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="table-row empty" role="row">
                     <span role="cell" className="info-cell">
@@ -601,7 +735,7 @@ function App() {
             <pre>{hexDump}</pre>
           </section>
 
-          {(dragActive || (!hasPacketData && !hasHexData)) && (
+          {showDropOverlay && (
             <div
               className={`drop-overlay${dragActive ? " active" : ""}`}
               role="button"
