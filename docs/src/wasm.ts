@@ -68,19 +68,11 @@ const toStringOrFallback = (value: unknown, fallback: string): string => {
   return fallback;
 };
 
-const toFiniteNumberOrFallback = (
-  value: unknown,
-  fallback: number,
-): number => {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : fallback;
+const toFiniteNumberOrFallback = (value: unknown, fallback: number): number => {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 };
 
-const decodePayload = (
-  value: unknown,
-  fallback: Uint8Array,
-): Uint8Array => {
+const decodePayload = (value: unknown, fallback: Uint8Array): Uint8Array => {
   if (value instanceof Uint8Array) {
     return value.slice();
   }
@@ -107,9 +99,13 @@ const decodePayload = (
         return output;
       }
 
-      const bufferCtor = (globalThis as {
-        Buffer?: { from: (input: string, encoding: string) => Uint8Array | number[] };
-      }).Buffer;
+      const bufferCtor = (
+        globalThis as {
+          Buffer?: {
+            from: (input: string, encoding: string) => Uint8Array | number[];
+          };
+        }
+      ).Buffer;
       if (bufferCtor) {
         const bufferValue = bufferCtor.from(value, "base64");
         return bufferValue instanceof Uint8Array
@@ -174,7 +170,9 @@ const parseProcessingResult = (
       ? parsed.errors.filter((item): item is string => typeof item === "string")
       : [];
     const warnings = Array.isArray(parsed.warnings)
-      ? parsed.warnings.filter((item): item is string => typeof item === "string")
+      ? parsed.warnings.filter(
+          (item): item is string => typeof item === "string",
+        )
       : [];
 
     const packets = Array.isArray(parsed.packets)
@@ -186,7 +184,8 @@ const parseProcessingResult = (
 
             const record = packet as Record<string, unknown>;
             const payload = decodePayload(record.payload, bytes);
-            const fallbackLength = payload.length > 0 ? payload.length : bytes.length;
+            const fallbackLength =
+              payload.length > 0 ? payload.length : bytes.length;
 
             return {
               time: toStringOrFallback(record.time, "0.000000"),
@@ -195,7 +194,9 @@ const parseProcessingResult = (
               protocol: toStringOrFallback(record.protocol, "—"),
               length: Math.max(
                 0,
-                Math.round(toFiniteNumberOrFallback(record.length, fallbackLength)),
+                Math.round(
+                  toFiniteNumberOrFallback(record.length, fallbackLength),
+                ),
               ),
               info: toStringOrFallback(record.info, "—"),
               payload,

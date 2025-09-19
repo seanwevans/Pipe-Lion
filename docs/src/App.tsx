@@ -215,9 +215,7 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setSelectedPacketIndex(
-          processedPackets.length > 0 ? 0 : null,
-        );
+        setSelectedPacketIndex(processedPackets.length > 0 ? 0 : null);
         if (!isMountedRef.current) {
           return;
         }
@@ -430,12 +428,18 @@ function App() {
     ) {
       setSelectedPacketIndex(visibleIndices[0]);
     }
-  }, [hasPacketData, selectedPacketIndex, setSelectedPacketIndex, visibleIndices]);
+  }, [
+    hasPacketData,
+    selectedPacketIndex,
+    setSelectedPacketIndex,
+    visibleIndices,
+  ]);
 
   const selectedPacket =
     selectedPacketIndex !== null ? packets[selectedPacketIndex] ?? null : null;
   const isSelectedPacketVisible =
-    selectedPacketIndex !== null && visibleIndices.includes(selectedPacketIndex);
+    selectedPacketIndex !== null &&
+    visibleIndices.includes(selectedPacketIndex);
   const displayedPacket = isSelectedPacketVisible ? selectedPacket : null;
 
   const packetDetailsText = useMemo(() => {
