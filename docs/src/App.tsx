@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { evaluateFilter, parseFilter, tokenizeFilter, type FilterNode } from "./filter";
 import { loadProcessor } from "./wasm";
@@ -75,14 +75,58 @@ function App() {
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
   const isMountedRef = useRef(true);
+  const fileReaderRef = useRef<FileReader | null>(null);
+
+  const abortActiveReader = useCallback(() => {
+    const activeReader = fileReaderRef.current;
+    if (activeReader) {
+      activeReader.abort();
+      fileReaderRef.current = null;
+    }
+  }, []);
+
+  const readFileBytes = useCallback(
+    (file: File) =>
+      new Promise<Uint8Array>((resolve, reject) => {
+        abortActiveReader();
+
+        const reader = new FileReader();
+        fileReaderRef.current = reader;
+
+        reader.onload = () => {
+          fileReaderRef.current = null;
+          const result = reader.result;
+          if (result instanceof ArrayBuffer) {
+            resolve(new Uint8Array(result));
+            return;
+          }
+
+          reject(new Error("Unexpected file reader result."));
+        };
+
+        reader.onerror = () => {
+          fileReaderRef.current = null;
+          reject(reader.error ?? new Error("Failed to read file."));
+        };
+
+        reader.onabort = () => {
+          fileReaderRef.current = null;
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+
+        reader.readAsArrayBuffer(file);
+      }),
+    [abortActiveReader],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       uploadTokenRef.current += 1;
+      abortActiveReader();
     };
-  }, []);
+  }, [abortActiveReader]);
 
   useEffect(() => {
     loadProcessor()
@@ -141,11 +185,10 @@ function App() {
       setError(null);
 
       try {
-        const buffer = await file.arrayBuffer();
+        const bytes = await readFileBytes(file);
         if (uploadTokenRef.current !== token) {
           return;
         }
-        const bytes = new Uint8Array(buffer);
         const processor = await loadProcessor();
         if (uploadTokenRef.current !== token) {
           return;
@@ -172,6 +215,9 @@ function App() {
         }
         setError(null);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         console.error("Processing failed", err);
         if (uploadTokenRef.current !== token) {
           return;
@@ -195,7 +241,7 @@ function App() {
         setHexDump("No data loaded.");
       }
     },
-    [maxFileSizeMB],
+    [maxFileSizeMB, readFileBytes],
   );
 
   const enqueueFile = useCallback(
@@ -303,26 +349,32 @@ function App() {
     [],
   );
 
-  const summaryLines = packetSummary
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const summaryLines = useMemo(() => {
+    return packetSummary
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }, [packetSummary]);
   const awaitingPlaceholder =
     summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
-  const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-  const baseSummaryEntries = baseSummaryLines.map((text, index) => ({
-    text,
-    originalIndex: index,
-  }));
+  const baseSummaryEntries = useMemo(() => {
+    const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
+    return baseSummaryLines.map((text, index) => ({
+      text,
+      originalIndex: index,
+    }));
+  }, [awaitingPlaceholder, summaryLines]);
   const totalPackets = baseSummaryEntries.length;
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const visibleSummaryEntries =
-    activeFilter && filterAst
-      ? baseSummaryEntries.filter((entry) =>
-          evaluateFilter(filterAst, entry.text.toLowerCase()),
-        )
-      : baseSummaryEntries;
+  const visibleSummaryEntries = useMemo(() => {
+    if (activeFilter && filterAst) {
+      return baseSummaryEntries.filter((entry) =>
+        evaluateFilter(filterAst, entry.text.toLowerCase()),
+      );
+    }
+    return baseSummaryEntries;
+  }, [activeFilter, baseSummaryEntries, filterAst, filterError, filterText]);
   const visibleCount = visibleSummaryEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
@@ -354,6 +406,7 @@ function App() {
         id="file-input"
         type="file"
         accept=".pcap,.pcapng,.bin,.dat,.raw,.txt,application/octet-stream"
+        multiple
         onChange={onFileChange}
         hidden
       />
@@ -424,7 +477,9 @@ function App() {
               value={filterText}
               onChange={onFilterChange}
               aria-invalid={filterError ? true : false}
-              aria-describedby={filterError ? "display-filter-error" : undefined}
+              aria-describedby={
+                filterError ? "display-filter-error" : undefined
+              }
             />
           </label>
           <div className="filter-right">
