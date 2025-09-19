@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
-import { evaluateFilter, parseFilter, tokenizeFilter, type FilterNode } from "./filter";
+import {
+  evaluateFilter,
+  parseFilter,
+  tokenizeFilter,
+  type FilterNode,
+} from "./filter";
 import { loadProcessor } from "./wasm";
 
 const BYTE_TO_HEX = (() => {

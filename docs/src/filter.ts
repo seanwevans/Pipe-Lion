@@ -166,7 +166,11 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
         break;
       }
 
-      if (next.type === "TEXT" || next.type === "LPAREN" || next.type === "NOT") {
+      if (
+        next.type === "TEXT" ||
+        next.type === "LPAREN" ||
+        next.type === "NOT"
+      ) {
         const right = parseNot();
         node = { type: "and", left: node, right };
         continue;
@@ -226,9 +230,13 @@ export function evaluateFilter(node: FilterNode, line: string): boolean {
     case "text":
       return line.includes(node.value);
     case "and":
-      return evaluateFilter(node.left, line) && evaluateFilter(node.right, line);
+      return (
+        evaluateFilter(node.left, line) && evaluateFilter(node.right, line)
+      );
     case "or":
-      return evaluateFilter(node.left, line) || evaluateFilter(node.right, line);
+      return (
+        evaluateFilter(node.left, line) || evaluateFilter(node.right, line)
+      );
     case "not":
       return !evaluateFilter(node.operand, line);
     default:
