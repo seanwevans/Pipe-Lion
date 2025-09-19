@@ -510,7 +510,6 @@ function App() {
     [],
   );
 
-
   const totalPackets = packets.length;
 
   const activeFilter =
@@ -535,10 +534,8 @@ function App() {
   );
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
-
       return searchablePackets.filter((entry) =>
         evaluateFilter(filterAst, entry.searchableText),
-
       );
     }
     return searchablePackets;
@@ -670,7 +667,6 @@ function App() {
     },
     [selectedPacketIndex, setSelectedPacketIndex, visibleIndices],
   );
-
 
   return (
     <div className="app">
@@ -821,7 +817,6 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-
                   visiblePacketEntries.map(({ packet, index }) => {
                     const isSelected = index === selectedPacketIndex;
                     return (
@@ -852,7 +847,6 @@ function App() {
                       </div>
                     );
                   })
-
                 ) : (
                   <div className="table-row empty" role="row">
                     <span role="cell" className="info-cell">
