@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { loadProcessor } from "./wasm";
 
@@ -548,26 +548,32 @@ function App() {
     [],
   );
 
-  const summaryLines = packetSummary
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const summaryLines = useMemo(() => {
+    return packetSummary
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }, [packetSummary]);
   const awaitingPlaceholder =
     summaryLines.length === 1 && summaryLines[0] === "Awaiting packet data.";
-  const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
-  const baseSummaryEntries = baseSummaryLines.map((text, index) => ({
-    text,
-    originalIndex: index,
-  }));
+  const baseSummaryEntries = useMemo(() => {
+    const baseSummaryLines = awaitingPlaceholder ? [] : summaryLines;
+    return baseSummaryLines.map((text, index) => ({
+      text,
+      originalIndex: index,
+    }));
+  }, [awaitingPlaceholder, summaryLines]);
   const totalPackets = baseSummaryEntries.length;
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const visibleSummaryEntries =
-    activeFilter && filterAst
-      ? baseSummaryEntries.filter((entry) =>
-          evaluateFilter(filterAst, entry.text.toLowerCase()),
-        )
-      : baseSummaryEntries;
+  const visibleSummaryEntries = useMemo(() => {
+    if (activeFilter && filterAst) {
+      return baseSummaryEntries.filter((entry) =>
+        evaluateFilter(filterAst, entry.text.toLowerCase()),
+      );
+    }
+    return baseSummaryEntries;
+  }, [activeFilter, baseSummaryEntries, filterAst, filterError, filterText]);
   const visibleCount = visibleSummaryEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";
