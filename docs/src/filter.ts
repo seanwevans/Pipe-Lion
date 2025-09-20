@@ -309,9 +309,7 @@ export function evaluateFilter(
 ): boolean {
   switch (node.type) {
     case "text":
-      return (
-        (searchableText ?? packet.info.toLowerCase()).includes(node.value)
-      );
+      return (searchableText ?? packet.info.toLowerCase()).includes(node.value);
     case "comparison": {
       const value = resolveFieldValue(packet, node.field);
       if (value === undefined) {
