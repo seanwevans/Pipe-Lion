@@ -7,7 +7,7 @@ import {
   type FilterNode,
   type PacketRecord,
 } from "./filter";
-import { loadProcessor, type PacketRecord } from "./wasm";
+import { loadProcessor } from "./wasm";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -93,9 +93,13 @@ function toOptionalNumericLike(value: unknown): string | number | undefined {
   return undefined;
 }
 
-function parsePacketSummaryLine(line: string): PacketRecord {
+export function parsePacketSummaryLine(line: string): PacketRecord {
   const trimmed = line.trim();
-  const record: PacketRecord = { info: trimmed, summary: trimmed };
+  const record: PacketRecord = {
+    info: trimmed,
+    summary: trimmed,
+    payload: new Uint8Array(),
+  };
 
   if (trimmed.length === 0) {
     return record;
@@ -139,6 +143,7 @@ function parsePacketSummaryLine(line: string): PacketRecord {
       toOptionalString(data.Source);
     if (srcValue) {
       record.src = srcValue;
+      record.source = srcValue;
     }
 
     const dstValue =
@@ -148,6 +153,7 @@ function parsePacketSummaryLine(line: string): PacketRecord {
       toOptionalString(data.Destination);
     if (dstValue) {
       record.dst = dstValue;
+      record.destination = dstValue;
     }
 
     const protocolValue =
@@ -196,11 +202,6 @@ function parsePacketSummaryLine(line: string): PacketRecord {
 
   return record;
 }
-
-type PacketSummaryEntry = {
-  record: PacketRecord;
-  originalIndex: number;
-};
 
 function App() {
   const [status, setStatus] = useState(
@@ -520,11 +521,11 @@ function App() {
         packet,
         index,
         searchableText: [
-          packet.time,
-          packet.source,
-          packet.destination,
-          packet.protocol,
-          String(packet.length),
+          packet.time ?? "",
+          packet.source ?? packet.src ?? "",
+          packet.destination ?? packet.dst ?? "",
+          packet.protocol ?? "",
+          packet.length !== undefined ? String(packet.length) : "",
           packet.info,
         ]
           .join(" ")
@@ -535,7 +536,7 @@ function App() {
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
       return searchablePackets.filter((entry) =>
-        evaluateFilter(filterAst, entry.searchableText),
+        evaluateFilter(filterAst, entry.packet),
       );
     }
     return searchablePackets;
@@ -599,11 +600,17 @@ function App() {
     }
 
     return [
-      `Time: ${displayedPacket.time}`,
-      `Source: ${displayedPacket.source}`,
-      `Destination: ${displayedPacket.destination}`,
-      `Protocol: ${displayedPacket.protocol}`,
-      `Length: ${displayedPacket.length}`,
+      `Time: ${displayedPacket.time ?? "—"}`,
+      `Source: ${displayedPacket.source ?? displayedPacket.src ?? "—"}`,
+      `Destination: ${
+        displayedPacket.destination ?? displayedPacket.dst ?? "—"
+      }`,
+      `Protocol: ${displayedPacket.protocol ?? "—"}`,
+      `Length: ${
+        displayedPacket.length !== undefined
+          ? String(displayedPacket.length)
+          : "—"
+      }`,
       "",
       displayedPacket.info,
     ].join("\n");
@@ -628,11 +635,12 @@ function App() {
     if (!displayedPacket) {
       return "Select a packet to view its payload.";
     }
-    if (displayedPacket.payload.length === 0) {
+    const payload = displayedPacket.payload;
+    if (!payload || payload.length === 0) {
       return "Packet payload is empty.";
     }
 
-    return formatHex(displayedPacket.payload);
+    return formatHex(payload);
   }, [activeFilter, displayedPacket, hasPacketData, hasVisiblePackets]);
 
   const showDropOverlay = dragActive || !hasPacketData;
@@ -836,10 +844,14 @@ function App() {
                         }}
                       >
                         <span role="cell">{index + 1}</span>
-                        <span role="cell">{packet.time}</span>
-                        <span role="cell">{packet.source}</span>
-                        <span role="cell">{packet.destination}</span>
-                        <span role="cell">{packet.protocol}</span>
+                        <span role="cell">{packet.time ?? ""}</span>
+                        <span role="cell">
+                          {packet.source ?? packet.src ?? ""}
+                        </span>
+                        <span role="cell">
+                          {packet.destination ?? packet.dst ?? ""}
+                        </span>
+                        <span role="cell">{packet.protocol ?? ""}</span>
                         <span role="cell">{packet.length}</span>
                         <span role="cell" className="info-cell">
                           {packet.info}
