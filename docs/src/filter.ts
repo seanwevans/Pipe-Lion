@@ -308,7 +308,6 @@ export function evaluateFilter(
   searchableText?: string,
 ): boolean {
   switch (node.type) {
-
     case "text": {
       const infoMatch = packet.info.toLowerCase().includes(node.value);
       if (infoMatch) {
