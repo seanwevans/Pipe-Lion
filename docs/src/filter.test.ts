@@ -78,6 +78,23 @@ describe("filter helpers", () => {
     expect(evaluateFilter(ast, mismatch)).toBe(false);
   });
 
+  it("matches field comparisons when searchable text omits the field value", () => {
+    const ast = parseFilter(tokenizeFilter('protocol == "tcp"'));
+    const packet = makePacket({
+      info: "Generic packet",
+      protocol: "TCP",
+    });
+
+    const searchableText = "generic packet";
+    expect(evaluateFilter(ast, packet, searchableText)).toBe(true);
+
+    const mismatch = makePacket({
+      info: "Generic packet",
+      protocol: "udp",
+    });
+    expect(evaluateFilter(ast, mismatch, searchableText)).toBe(false);
+  });
+
   it("supports negations and boolean combinations with comparisons", () => {
     const ast = parseFilter(
       tokenizeFilter(

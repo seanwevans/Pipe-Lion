@@ -1,12 +1,15 @@
 export type PacketRecord = {
   time?: string;
   src?: string;
+  source?: string;
   dst?: string;
+  destination?: string;
   protocol?: string;
   length?: string | number;
   info: string;
   summary?: string;
-  [key: string]: string | number | undefined;
+  payload?: Uint8Array;
+  [key: string]: string | number | Uint8Array | undefined;
 };
 
 export type FilterNode =
@@ -295,7 +298,10 @@ function resolveFieldValue(
   const candidates = FIELD_ALIASES[field] ?? [field];
   for (const candidate of candidates) {
     const value = packet[candidate];
-    if (value !== undefined) {
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value === "string" || typeof value === "number") {
       return value;
     }
   }
@@ -305,10 +311,22 @@ function resolveFieldValue(
 export function evaluateFilter(
   node: FilterNode,
   packet: PacketRecord,
+  searchableText?: string,
 ): boolean {
   switch (node.type) {
-    case "text":
-      return packet.info.toLowerCase().includes(node.value);
+    case "text": {
+      const infoMatch = packet.info.toLowerCase().includes(node.value);
+      if (infoMatch) {
+        return true;
+      }
+
+      if (typeof packet.summary === "string") {
+        return packet.summary.toLowerCase().includes(node.value);
+      }
+
+      return false;
+    }
+
     case "comparison": {
       const value = resolveFieldValue(packet, node.field);
       if (value === undefined) {
@@ -326,14 +344,16 @@ export function evaluateFilter(
     }
     case "and":
       return (
-        evaluateFilter(node.left, packet) && evaluateFilter(node.right, packet)
+        evaluateFilter(node.left, packet, searchableText) &&
+        evaluateFilter(node.right, packet, searchableText)
       );
     case "or":
       return (
-        evaluateFilter(node.left, packet) || evaluateFilter(node.right, packet)
+        evaluateFilter(node.left, packet, searchableText) ||
+        evaluateFilter(node.right, packet, searchableText)
       );
     case "not":
-      return !evaluateFilter(node.operand, packet);
+      return !evaluateFilter(node.operand, packet, searchableText);
     default:
       return true;
   }

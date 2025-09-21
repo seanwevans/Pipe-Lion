@@ -139,6 +139,7 @@ function parsePacketSummaryLine(line: string): FilterPacketRecord {
       toOptionalString(data.Source);
     if (srcValue) {
       record.src = srcValue;
+      record.source = srcValue;
     }
 
     const dstValue =
@@ -148,6 +149,7 @@ function parsePacketSummaryLine(line: string): FilterPacketRecord {
       toOptionalString(data.Destination);
     if (dstValue) {
       record.dst = dstValue;
+      record.destination = dstValue;
     }
 
     const protocolValue =
@@ -219,10 +221,12 @@ type PacketSummaryEntry = {
   originalIndex: number;
 };
 
+
 function App() {
   const [status, setStatus] = useState(
     "Drop packet captures or binary payloads to analyze.",
   );
+
   const [packets, setPackets] = useState<WasmPacketRecord[]>([]);
   const [selectedPacketIndex, setSelectedPacketIndex] = useState<number | null>(
     null,
@@ -533,6 +537,7 @@ function App() {
     filterAst !== null && filterError === null && filterText.trim().length > 0;
   const searchablePackets = useMemo<PacketSummaryEntry[]>(
     () =>
+
       packets.map((packet, index) => {
         const record = toFilterPacketRecord(packet);
         const searchableText = [
@@ -625,11 +630,17 @@ function App() {
     }
 
     return [
-      `Time: ${displayedPacket.time}`,
-      `Source: ${displayedPacket.source}`,
-      `Destination: ${displayedPacket.destination}`,
-      `Protocol: ${displayedPacket.protocol}`,
-      `Length: ${displayedPacket.length}`,
+      `Time: ${displayedPacket.time ?? "—"}`,
+      `Source: ${displayedPacket.source ?? displayedPacket.src ?? "—"}`,
+      `Destination: ${
+        displayedPacket.destination ?? displayedPacket.dst ?? "—"
+      }`,
+      `Protocol: ${displayedPacket.protocol ?? "—"}`,
+      `Length: ${
+        displayedPacket.length !== undefined
+          ? String(displayedPacket.length)
+          : "—"
+      }`,
       "",
       displayedPacket.info,
     ].join("\n");
@@ -654,11 +665,12 @@ function App() {
     if (!displayedPacket) {
       return "Select a packet to view its payload.";
     }
-    if (displayedPacket.payload.length === 0) {
+    const payload = displayedPacket.payload;
+    if (!payload || payload.length === 0) {
       return "Packet payload is empty.";
     }
 
-    return formatHex(displayedPacket.payload);
+    return formatHex(payload);
   }, [activeFilter, displayedPacket, hasPacketData, hasVisiblePackets]);
 
   const showDropOverlay = dragActive || !hasPacketData;
@@ -868,7 +880,7 @@ function App() {
                         <span role="cell">{packet.protocol}</span>
                         <span role="cell">{packet.length}</span>
                         <span role="cell" className="info-cell">
-                          {packet.info}
+                          {record.info}
                         </span>
                       </div>
                     );
