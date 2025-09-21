@@ -5,9 +5,12 @@ import {
   parseFilter,
   tokenizeFilter,
   type FilterNode,
-  type PacketRecord,
+  type PacketRecord as FilterPacketRecord,
 } from "./filter";
-import { loadProcessor } from "./wasm";
+import {
+  loadProcessor,
+  type PacketRecord as ProcessorPacketRecord,
+} from "./wasm";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -203,11 +206,12 @@ export function parsePacketSummaryLine(line: string): PacketRecord {
   return record;
 }
 
+
 function App() {
   const [status, setStatus] = useState(
     "Drop packet captures or binary payloads to analyze.",
   );
-  const [packets, setPackets] = useState<PacketRecord[]>([]);
+  const [packets, setPackets] = useState<ProcessorPacketRecord[]>([]);
   const [selectedPacketIndex, setSelectedPacketIndex] = useState<number | null>(
     null,
   );
@@ -515,7 +519,7 @@ function App() {
 
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const searchablePackets = useMemo(
+  const searchablePackets = useMemo<PacketSummaryEntry[]>(
     () =>
       packets.map((packet, index) => ({
         packet,
@@ -528,9 +532,27 @@ function App() {
           packet.length !== undefined ? String(packet.length) : "",
           packet.info,
         ]
-          .join(" ")
-          .toLowerCase(),
-      })),
+          .filter((value) => value !== undefined && value !== null)
+          .join(" ");
+
+        const filterRecord: FilterPacketRecord = {
+          time: packet.time,
+          src: packet.source,
+          source: packet.source,
+          dst: packet.destination,
+          destination: packet.destination,
+          protocol: packet.protocol,
+          length: packet.length,
+          info: packet.info,
+          summary: aggregatedSummary,
+        };
+
+        return {
+          record: packet,
+          originalIndex: index,
+          filterRecord,
+        };
+      }),
     [packets],
   );
   const visiblePacketEntries = useMemo(() => {
@@ -547,7 +569,7 @@ function App() {
   const hasPacketData = totalPackets > 0;
   const hasVisiblePackets = visibleCount > 0;
   const visibleIndices = useMemo(
-    () => visiblePacketEntries.map((entry) => entry.index),
+    () => visiblePacketEntries.map((entry) => entry.originalIndex),
     [visiblePacketEntries],
   );
 
@@ -825,21 +847,21 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visiblePacketEntries.map(({ packet, index }) => {
-                    const isSelected = index === selectedPacketIndex;
+                  visiblePacketEntries.map(({ record, originalIndex }) => {
+                    const isSelected = originalIndex === selectedPacketIndex;
                     return (
                       <div
                         className={`table-row${isSelected ? " selected" : ""}`}
                         role="row"
-                        key={`packet-${index}`}
+                        key={`packet-${originalIndex}`}
                         tabIndex={0}
                         data-selected={isSelected || undefined}
                         aria-selected={isSelected}
-                        onClick={() => setSelectedPacketIndex(index)}
+                        onClick={() => setSelectedPacketIndex(originalIndex)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setSelectedPacketIndex(index);
+                            setSelectedPacketIndex(originalIndex);
                           }
                         }}
                       >
@@ -854,7 +876,7 @@ function App() {
                         <span role="cell">{packet.protocol ?? ""}</span>
                         <span role="cell">{packet.length}</span>
                         <span role="cell" className="info-cell">
-                          {packet.info}
+                          {record.info}
                         </span>
                       </div>
                     );
