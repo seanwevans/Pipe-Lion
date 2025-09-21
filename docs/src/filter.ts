@@ -308,8 +308,20 @@ export function evaluateFilter(
   searchableText?: string,
 ): boolean {
   switch (node.type) {
-    case "text":
-      return (searchableText ?? packet.info.toLowerCase()).includes(node.value);
+
+    case "text": {
+      const infoMatch = packet.info.toLowerCase().includes(node.value);
+      if (infoMatch) {
+        return true;
+      }
+
+      if (typeof packet.summary === "string") {
+        return packet.summary.toLowerCase().includes(node.value);
+      }
+
+      return false;
+    }
+
     case "comparison": {
       const value = resolveFieldValue(packet, node.field);
       if (value === undefined) {
