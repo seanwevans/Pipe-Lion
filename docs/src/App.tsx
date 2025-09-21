@@ -7,10 +7,7 @@ import {
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
-import {
-  loadProcessor,
-  type PacketRecord as ProcessorPacketRecord,
-} from "./wasm";
+import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -96,13 +93,9 @@ function toOptionalNumericLike(value: unknown): string | number | undefined {
   return undefined;
 }
 
-export function parsePacketSummaryLine(line: string): PacketRecord {
+function parsePacketSummaryLine(line: string): FilterPacketRecord {
   const trimmed = line.trim();
-  const record: PacketRecord = {
-    info: trimmed,
-    summary: trimmed,
-    payload: new Uint8Array(),
-  };
+  const record: FilterPacketRecord = { info: trimmed, summary: trimmed };
 
   if (trimmed.length === 0) {
     return record;
@@ -206,12 +199,35 @@ export function parsePacketSummaryLine(line: string): PacketRecord {
   return record;
 }
 
+function toFilterPacketRecord(packet: WasmPacketRecord): FilterPacketRecord {
+  const summaryRecord = parsePacketSummaryLine(packet.info);
+
+  return {
+    ...summaryRecord,
+    time: summaryRecord.time ?? packet.time,
+    src: summaryRecord.src ?? packet.source,
+    dst: summaryRecord.dst ?? packet.destination,
+    protocol: summaryRecord.protocol ?? packet.protocol,
+    length: summaryRecord.length ?? packet.length,
+    info: summaryRecord.info ?? packet.info,
+    summary: summaryRecord.summary ?? summaryRecord.info,
+  };
+}
+
+type PacketSummaryEntry = {
+  packet: WasmPacketRecord;
+  record: FilterPacketRecord;
+  searchableText: string;
+  originalIndex: number;
+};
+
 
 function App() {
   const [status, setStatus] = useState(
     "Drop packet captures or binary payloads to analyze.",
   );
-  const [packets, setPackets] = useState<ProcessorPacketRecord[]>([]);
+
+  const [packets, setPackets] = useState<WasmPacketRecord[]>([]);
   const [selectedPacketIndex, setSelectedPacketIndex] = useState<number | null>(
     null,
   );
@@ -521,36 +537,28 @@ function App() {
     filterAst !== null && filterError === null && filterText.trim().length > 0;
   const searchablePackets = useMemo<PacketSummaryEntry[]>(
     () =>
-      packets.map((packet, index) => ({
-        packet,
-        index,
-        searchableText: [
-          packet.time ?? "",
-          packet.source ?? packet.src ?? "",
-          packet.destination ?? packet.dst ?? "",
-          packet.protocol ?? "",
-          packet.length !== undefined ? String(packet.length) : "",
-          packet.info,
-        ]
-          .filter((value) => value !== undefined && value !== null)
-          .join(" ");
 
-        const filterRecord: FilterPacketRecord = {
-          time: packet.time,
-          src: packet.source,
-          source: packet.source,
-          dst: packet.destination,
-          destination: packet.destination,
-          protocol: packet.protocol,
-          length: packet.length,
-          info: packet.info,
-          summary: aggregatedSummary,
-        };
+      packets.map((packet, index) => {
+        const record = toFilterPacketRecord(packet);
+        const searchableText = [
+          record.time,
+          record.src,
+          record.dst,
+          record.protocol,
+          record.length,
+          record.info,
+          record.summary,
+        ]
+          .filter((value): value is string | number => value !== undefined)
+          .map((value) => String(value))
+          .join(" ")
+          .toLowerCase();
 
         return {
-          record: packet,
+          packet,
+          record,
           originalIndex: index,
-          filterRecord,
+          searchableText,
         };
       }),
     [packets],
@@ -558,7 +566,7 @@ function App() {
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
       return searchablePackets.filter((entry) =>
-        evaluateFilter(filterAst, entry.packet),
+        evaluateFilter(filterAst, entry.record),
       );
     }
     return searchablePackets;
@@ -847,7 +855,7 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visiblePacketEntries.map(({ record, originalIndex }) => {
+                  visiblePacketEntries.map(({ packet, originalIndex }) => {
                     const isSelected = originalIndex === selectedPacketIndex;
                     return (
                       <div
@@ -865,15 +873,11 @@ function App() {
                           }
                         }}
                       >
-                        <span role="cell">{index + 1}</span>
-                        <span role="cell">{packet.time ?? ""}</span>
-                        <span role="cell">
-                          {packet.source ?? packet.src ?? ""}
-                        </span>
-                        <span role="cell">
-                          {packet.destination ?? packet.dst ?? ""}
-                        </span>
-                        <span role="cell">{packet.protocol ?? ""}</span>
+                        <span role="cell">{originalIndex + 1}</span>
+                        <span role="cell">{packet.time}</span>
+                        <span role="cell">{packet.source}</span>
+                        <span role="cell">{packet.destination}</span>
+                        <span role="cell">{packet.protocol}</span>
                         <span role="cell">{packet.length}</span>
                         <span role="cell" className="info-cell">
                           {record.info}
