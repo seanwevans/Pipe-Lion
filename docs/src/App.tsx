@@ -221,7 +221,6 @@ type PacketSummaryEntry = {
   originalIndex: number;
 };
 
-
 function App() {
   const [status, setStatus] = useState(
     "Drop packet captures or binary payloads to analyze.",
@@ -537,7 +536,6 @@ function App() {
     filterAst !== null && filterError === null && filterText.trim().length > 0;
   const searchablePackets = useMemo<PacketSummaryEntry[]>(
     () =>
-
       packets.map((packet, index) => {
         const record = toFilterPacketRecord(packet);
         const searchableText = [
