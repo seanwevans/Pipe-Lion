@@ -1,4 +1,6 @@
-export interface PacketRecord {
+import type { PacketRecord as FilterPacketRecord } from "./filter";
+
+export interface PacketRecord extends FilterPacketRecord {
   time: string;
   source: string;
   destination: string;

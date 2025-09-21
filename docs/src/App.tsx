@@ -67,11 +67,145 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-type PacketSummaryEntry = {
-  record: ProcessorPacketRecord;
-  originalIndex: number;
-  filterRecord: FilterPacketRecord;
-};
+function toOptionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return undefined;
+}
+
+function toOptionalNumericLike(value: unknown): string | number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? "1" : "0";
+  }
+  return undefined;
+}
+
+export function parsePacketSummaryLine(line: string): PacketRecord {
+  const trimmed = line.trim();
+  const record: PacketRecord = {
+    info: trimmed,
+    summary: trimmed,
+    payload: new Uint8Array(),
+  };
+
+  if (trimmed.length === 0) {
+    return record;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return record;
+    }
+
+    const data = parsed as Record<string, unknown>;
+
+    const infoValue =
+      toOptionalString(data.info) ??
+      toOptionalString(data.Info) ??
+      toOptionalString(data.summary) ??
+      toOptionalString(data.Summary);
+    if (infoValue) {
+      record.info = infoValue;
+    }
+
+    const summaryValue =
+      toOptionalString(data.summary) ?? toOptionalString(data.Summary);
+    if (summaryValue) {
+      record.summary = summaryValue;
+    }
+
+    const timeValue =
+      toOptionalString(data.time) ??
+      toOptionalString(data.timestamp) ??
+      toOptionalString(data.Time) ??
+      toOptionalString(data.Timestamp);
+    if (timeValue) {
+      record.time = timeValue;
+    }
+
+    const srcValue =
+      toOptionalString(data.src) ??
+      toOptionalString(data.source) ??
+      toOptionalString(data.Source);
+    if (srcValue) {
+      record.src = srcValue;
+      record.source = srcValue;
+    }
+
+    const dstValue =
+      toOptionalString(data.dst) ??
+      toOptionalString(data.destination) ??
+      toOptionalString(data.Dst) ??
+      toOptionalString(data.Destination);
+    if (dstValue) {
+      record.dst = dstValue;
+      record.destination = dstValue;
+    }
+
+    const protocolValue =
+      toOptionalString(data.protocol) ??
+      toOptionalString(data.proto) ??
+      toOptionalString(data.Protocol) ??
+      toOptionalString(data.Proto);
+    if (protocolValue) {
+      record.protocol = protocolValue;
+    }
+
+    const lengthValue =
+      toOptionalNumericLike(data.length) ??
+      toOptionalNumericLike(data.len) ??
+      toOptionalNumericLike(data.size) ??
+      toOptionalNumericLike(data.Length) ??
+      toOptionalNumericLike(data.Len) ??
+      toOptionalNumericLike(data.Size);
+    if (lengthValue !== undefined) {
+      record.length = lengthValue;
+    }
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      if (key in record) {
+        continue;
+      }
+      if (typeof value === "string" || typeof value === "number") {
+        record[key] = value;
+        continue;
+      }
+      if (typeof value === "boolean") {
+        record[key] = value ? "true" : "false";
+      }
+    }
+
+    record.summary ??= record.info;
+    return record;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug("Failed to parse packet summary line", error);
+    }
+  }
+
+  return record;
+}
+
 
 function App() {
   const [status, setStatus] = useState(
@@ -387,13 +521,15 @@ function App() {
     filterAst !== null && filterError === null && filterText.trim().length > 0;
   const searchablePackets = useMemo<PacketSummaryEntry[]>(
     () =>
-      packets.map((packet, index) => {
-        const aggregatedSummary = [
-          packet.time,
-          packet.source,
-          packet.destination,
-          packet.protocol,
-          String(packet.length),
+      packets.map((packet, index) => ({
+        packet,
+        index,
+        searchableText: [
+          packet.time ?? "",
+          packet.source ?? packet.src ?? "",
+          packet.destination ?? packet.dst ?? "",
+          packet.protocol ?? "",
+          packet.length !== undefined ? String(packet.length) : "",
           packet.info,
         ]
           .filter((value) => value !== undefined && value !== null)
@@ -422,7 +558,7 @@ function App() {
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
       return searchablePackets.filter((entry) =>
-        evaluateFilter(filterAst, entry.filterRecord),
+        evaluateFilter(filterAst, entry.packet),
       );
     }
     return searchablePackets;
@@ -486,11 +622,17 @@ function App() {
     }
 
     return [
-      `Time: ${displayedPacket.time}`,
-      `Source: ${displayedPacket.source}`,
-      `Destination: ${displayedPacket.destination}`,
-      `Protocol: ${displayedPacket.protocol}`,
-      `Length: ${displayedPacket.length}`,
+      `Time: ${displayedPacket.time ?? "—"}`,
+      `Source: ${displayedPacket.source ?? displayedPacket.src ?? "—"}`,
+      `Destination: ${
+        displayedPacket.destination ?? displayedPacket.dst ?? "—"
+      }`,
+      `Protocol: ${displayedPacket.protocol ?? "—"}`,
+      `Length: ${
+        displayedPacket.length !== undefined
+          ? String(displayedPacket.length)
+          : "—"
+      }`,
       "",
       displayedPacket.info,
     ].join("\n");
@@ -515,11 +657,12 @@ function App() {
     if (!displayedPacket) {
       return "Select a packet to view its payload.";
     }
-    if (displayedPacket.payload.length === 0) {
+    const payload = displayedPacket.payload;
+    if (!payload || payload.length === 0) {
       return "Packet payload is empty.";
     }
 
-    return formatHex(displayedPacket.payload);
+    return formatHex(payload);
   }, [activeFilter, displayedPacket, hasPacketData, hasVisiblePackets]);
 
   const showDropOverlay = dragActive || !hasPacketData;
@@ -722,12 +865,16 @@ function App() {
                           }
                         }}
                       >
-                        <span role="cell">{originalIndex + 1}</span>
-                        <span role="cell">{record.time}</span>
-                        <span role="cell">{record.source}</span>
-                        <span role="cell">{record.destination}</span>
-                        <span role="cell">{record.protocol}</span>
-                        <span role="cell">{record.length}</span>
+                        <span role="cell">{index + 1}</span>
+                        <span role="cell">{packet.time ?? ""}</span>
+                        <span role="cell">
+                          {packet.source ?? packet.src ?? ""}
+                        </span>
+                        <span role="cell">
+                          {packet.destination ?? packet.dst ?? ""}
+                        </span>
+                        <span role="cell">{packet.protocol ?? ""}</span>
+                        <span role="cell">{packet.length}</span>
                         <span role="cell" className="info-cell">
                           {record.info}
                         </span>

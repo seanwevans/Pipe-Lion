@@ -1,12 +1,15 @@
 export type PacketRecord = {
   time?: string;
   src?: string;
+  source?: string;
   dst?: string;
+  destination?: string;
   protocol?: string;
   length?: string | number;
   info: string;
   summary?: string;
-  [key: string]: string | number | undefined;
+  payload?: Uint8Array;
+  [key: string]: string | number | Uint8Array | undefined;
 };
 
 export type FilterNode =
@@ -295,7 +298,10 @@ function resolveFieldValue(
   const candidates = FIELD_ALIASES[field] ?? [field];
   for (const candidate of candidates) {
     const value = packet[candidate];
-    if (value !== undefined) {
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value === "string" || typeof value === "number") {
       return value;
     }
   }
