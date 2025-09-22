@@ -564,7 +564,7 @@ function App() {
   const visiblePacketEntries = useMemo(() => {
     if (activeFilter && filterAst) {
       return searchablePackets.filter((entry) =>
-        evaluateFilter(filterAst, entry.record),
+        evaluateFilter(filterAst, entry.record, entry.searchableText),
       );
     }
     return searchablePackets;

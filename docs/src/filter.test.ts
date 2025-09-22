@@ -124,4 +124,19 @@ describe("filter helpers", () => {
     const mismatch = makePacket({ info: "DNS query" });
     expect(evaluateFilter(ast, mismatch)).toBe(false);
   });
+
+  it("matches free-text terms against searchable text from other columns", () => {
+    const ast = parseFilter(tokenizeFilter("10.0.0.42"));
+    const packet = makePacket({
+      info: "TLS handshake",
+      src: "10.0.0.42",
+      dst: "8.8.8.8",
+    });
+
+    const searchableText = "tls handshake 10.0.0.42 8.8.8.8";
+    expect(evaluateFilter(ast, packet, searchableText)).toBe(true);
+
+    const mismatchText = "tls handshake 8.8.8.8";
+    expect(evaluateFilter(ast, packet, mismatchText)).toBe(false);
+  });
 });
