@@ -853,7 +853,7 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visiblePacketEntries.map(({ packet, originalIndex }) => {
+                  visiblePacketEntries.map(({ packet, record, originalIndex }) => {
                     const isSelected = originalIndex === selectedPacketIndex;
                     return (
                       <div
