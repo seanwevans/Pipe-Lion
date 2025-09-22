@@ -324,6 +324,10 @@ export function evaluateFilter(
         return packet.summary.toLowerCase().includes(node.value);
       }
 
+      if (typeof searchableText === "string") {
+        return searchableText.includes(node.value);
+      }
+
       return false;
     }
 
