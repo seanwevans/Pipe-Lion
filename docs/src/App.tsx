@@ -853,36 +853,40 @@ function App() {
               </div>
               {hasPacketData ? (
                 hasVisiblePackets ? (
-                  visiblePacketEntries.map(({ packet, record, originalIndex }) => {
-                    const isSelected = originalIndex === selectedPacketIndex;
-                    return (
-                      <div
-                        className={`table-row${isSelected ? " selected" : ""}`}
-                        role="row"
-                        key={`packet-${originalIndex}`}
-                        tabIndex={0}
-                        data-selected={isSelected || undefined}
-                        aria-selected={isSelected}
-                        onClick={() => setSelectedPacketIndex(originalIndex)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedPacketIndex(originalIndex);
-                          }
-                        }}
-                      >
-                        <span role="cell">{originalIndex + 1}</span>
-                        <span role="cell">{packet.time}</span>
-                        <span role="cell">{packet.source}</span>
-                        <span role="cell">{packet.destination}</span>
-                        <span role="cell">{packet.protocol}</span>
-                        <span role="cell">{packet.length}</span>
-                        <span role="cell" className="info-cell">
-                          {record.info}
-                        </span>
-                      </div>
-                    );
-                  })
+                  visiblePacketEntries.map(
+                    ({ packet, record, originalIndex }) => {
+                      const isSelected = originalIndex === selectedPacketIndex;
+                      return (
+                        <div
+                          className={`table-row${
+                            isSelected ? " selected" : ""
+                          }`}
+                          role="row"
+                          key={`packet-${originalIndex}`}
+                          tabIndex={0}
+                          data-selected={isSelected || undefined}
+                          aria-selected={isSelected}
+                          onClick={() => setSelectedPacketIndex(originalIndex)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedPacketIndex(originalIndex);
+                            }
+                          }}
+                        >
+                          <span role="cell">{originalIndex + 1}</span>
+                          <span role="cell">{packet.time}</span>
+                          <span role="cell">{packet.source}</span>
+                          <span role="cell">{packet.destination}</span>
+                          <span role="cell">{packet.protocol}</span>
+                          <span role="cell">{packet.length}</span>
+                          <span role="cell" className="info-cell">
+                            {record.info}
+                          </span>
+                        </div>
+                      );
+                    },
+                  )
                 ) : (
                   <div className="table-row empty" role="row">
                     <span role="cell" className="info-cell">
