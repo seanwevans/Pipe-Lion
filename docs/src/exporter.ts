@@ -28,13 +28,18 @@ const toBase64 = (bytes: Uint8Array): string => {
     return globalThis.btoa(binary);
   }
 
-  const bufferCtor = (globalThis as {
-    Buffer?: {
-      from: (input: Uint8Array | number[], encoding?: string) => {
-        toString: (encoding: string) => string;
+  const bufferCtor = (
+    globalThis as {
+      Buffer?: {
+        from: (
+          input: Uint8Array | number[],
+          encoding?: string,
+        ) => {
+          toString: (encoding: string) => string;
+        };
       };
-    };
-  }).Buffer;
+    }
+  ).Buffer;
 
   if (bufferCtor) {
     return bufferCtor.from(bytes).toString("base64");
@@ -95,7 +100,10 @@ const createJsonExport = (
   };
 };
 
-const parseTimestamp = (time: string, fallbackIndex: number): {
+const parseTimestamp = (
+  time: string,
+  fallbackIndex: number,
+): {
   seconds: number;
   microseconds: number;
 } => {

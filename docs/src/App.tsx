@@ -7,10 +7,7 @@ import {
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
-import {
-  downloadPacketExport,
-  type PacketExportFormat,
-} from "./exporter";
+import { downloadPacketExport, type PacketExportFormat } from "./exporter";
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
@@ -359,7 +356,9 @@ function App() {
         prev && prev.toLowerCase().includes("export") ? null : prev,
       );
       setStatus(
-        `Exported ${packets.length} ${label} as ${result.format.toUpperCase()}.`,
+        `Exported ${
+          packets.length
+        } ${label} as ${result.format.toUpperCase()}.`,
       );
     } catch (err) {
       console.error("Packet export failed", err);

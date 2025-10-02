@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createPacketExport } from "./exporter";
 import type { PacketRecord } from "./wasm";
 
-const createSamplePacket = (overrides: Partial<PacketRecord> = {}): PacketRecord => ({
+const createSamplePacket = (
+  overrides: Partial<PacketRecord> = {},
+): PacketRecord => ({
   time: "1.234567",
   source: "192.168.0.1",
   destination: "192.168.0.2",
@@ -16,7 +18,9 @@ const createSamplePacket = (overrides: Partial<PacketRecord> = {}): PacketRecord
 
 describe("createPacketExport", () => {
   it("throws when no packets are provided", () => {
-    expect(() => createPacketExport([])).toThrow("No packets available to export.");
+    expect(() => createPacketExport([])).toThrow(
+      "No packets available to export.",
+    );
   });
 
   it("creates a JSON blob with base64 payloads", async () => {
