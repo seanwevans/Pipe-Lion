@@ -11,9 +11,8 @@ export default defineConfig({
   base: repositoryName ? `/${repositoryName}/` : "/",
   plugins: [react()],
   test: {
-    environment: "jsdom",
+    environment: "node",
+    environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
     setupFiles: "./src/test/setup.ts",
-    css: true,
-    environmentMatchGlobs: [["src/wasm.test.ts", "node"]],
   },
 });
