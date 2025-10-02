@@ -5,6 +5,7 @@ import {
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
+import { downloadPacketExport, type PacketExportFormat } from "./exporter";
 import FilterInput, { type FilterChangeDetails } from "./FilterInput";
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
@@ -102,6 +103,7 @@ function App() {
   const [filterText, setFilterText] = useState("");
   const [filterAst, setFilterAst] = useState<FilterNode | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<PacketExportFormat>("json");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
@@ -328,6 +330,44 @@ function App() {
     }
     setDragActive(false);
   }, []);
+
+  const onExportFormatChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setExportFormat(event.target.value as PacketExportFormat);
+    },
+    [],
+  );
+
+  const onSaveClick = useCallback(() => {
+    if (!isReady) {
+      return;
+    }
+
+    if (packets.length === 0) {
+      setError("No packets are available to export yet.");
+      return;
+    }
+
+    try {
+      const result = downloadPacketExport(packets, { format: exportFormat });
+      const label = packets.length === 1 ? "packet" : "packets";
+      setError((prev) =>
+        prev && prev.toLowerCase().includes("export") ? null : prev,
+      );
+      setStatus(
+        `Exported ${
+          packets.length
+        } ${label} as ${result.format.toUpperCase()}.`,
+      );
+    } catch (err) {
+      console.error("Packet export failed", err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to export the current packet list.";
+      setError(message);
+    }
+  }, [exportFormat, isReady, packets]);
 
   const onFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -594,9 +634,26 @@ function App() {
             <button type="button" onClick={onBrowseClick} disabled={!isReady}>
               Open Capture…
             </button>
-            <button type="button" disabled>
+            <button
+              type="button"
+              onClick={onSaveClick}
+              disabled={!isReady}
+              aria-disabled={!isReady ? true : undefined}
+            >
               Save As…
             </button>
+            <label className="toolbar-select" htmlFor="export-format">
+              <span>Format</span>
+              <select
+                id="export-format"
+                value={exportFormat}
+                onChange={onExportFormatChange}
+                disabled={!isReady}
+              >
+                <option value="json">JSON</option>
+                <option value="pcap">PCAP</option>
+              </select>
+            </label>
             <button type="button" disabled>
               Restart Capture
             </button>
