@@ -34,8 +34,44 @@ export type FilterToken =
   | { type: "CONTAINS" }
   | { type: "TEXT"; value: string };
 
-export function tokenizeFilter(expression: string): FilterToken[] {
-  const tokens: FilterToken[] = [];
+export type FilterTokenWithRange = FilterToken & {
+  start: number;
+  end: number;
+  raw: string;
+};
+
+export class FilterSyntaxError extends Error {
+  start: number;
+  end: number;
+  tokens?: FilterTokenWithRange[];
+
+  constructor(
+    message: string,
+    range?: { start: number; end: number },
+    tokens?: FilterTokenWithRange[],
+  ) {
+    super(message);
+    this.name = "FilterSyntaxError";
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.start = range?.start ?? 0;
+    this.end = range?.end ?? this.start;
+    if (tokens) {
+      this.tokens = tokens;
+    }
+  }
+}
+
+function createToken(
+  token: FilterToken,
+  start: number,
+  end: number,
+  raw: string,
+): FilterTokenWithRange {
+  return { ...token, start, end, raw };
+}
+
+function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
+  const tokens: FilterTokenWithRange[] = [];
   let index = 0;
 
   while (index < expression.length) {
@@ -47,48 +83,81 @@ export function tokenizeFilter(expression: string): FilterToken[] {
     }
 
     if (char === "(") {
-      tokens.push({ type: "LPAREN" });
+      tokens.push(createToken({ type: "LPAREN" }, index, index + 1, char));
       index += 1;
       continue;
     }
 
     if (char === ")") {
-      tokens.push({ type: "RPAREN" });
+      tokens.push(createToken({ type: "RPAREN" }, index, index + 1, char));
       index += 1;
       continue;
     }
 
     if (char === "&") {
       if (expression[index + 1] === "&") {
-        tokens.push({ type: "AND" });
+        tokens.push(
+          createToken(
+            { type: "AND" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
+        );
         index += 2;
         continue;
       }
-      throw new Error("Unexpected '&'");
+      throw new FilterSyntaxError(
+        "Unexpected '&'",
+        { start: index, end: index + 1 },
+        tokens,
+      );
     }
 
     if (char === "|") {
       if (expression[index + 1] === "|") {
-        tokens.push({ type: "OR" });
+        tokens.push(
+          createToken(
+            { type: "OR" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
+        );
         index += 2;
         continue;
       }
-      throw new Error("Unexpected '|'");
+      throw new FilterSyntaxError(
+        "Unexpected '|'",
+        { start: index, end: index + 1 },
+        tokens,
+      );
     }
 
     if (char === "!") {
-      tokens.push({ type: "NOT" });
+      tokens.push(createToken({ type: "NOT" }, index, index + 1, char));
       index += 1;
       continue;
     }
 
     if (char === "=") {
       if (expression[index + 1] === "=") {
-        tokens.push({ type: "EQ" });
+        tokens.push(
+          createToken(
+            { type: "EQ" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
+        );
         index += 2;
         continue;
       }
-      throw new Error("Unexpected '='");
+      throw new FilterSyntaxError(
+        "Unexpected '='",
+        { start: index, end: index + 1 },
+        tokens,
+      );
     }
 
     if (char === '"' || char === "'") {
@@ -96,6 +165,7 @@ export function tokenizeFilter(expression: string): FilterToken[] {
       index += 1;
       let value = "";
       let closed = false;
+      const start = index - 1;
 
       while (index < expression.length) {
         const current = expression[index];
@@ -119,10 +189,21 @@ export function tokenizeFilter(expression: string): FilterToken[] {
       }
 
       if (!closed) {
-        throw new Error("Unterminated quoted string");
+        throw new FilterSyntaxError(
+          "Unterminated quoted string",
+          { start, end: expression.length },
+          tokens,
+        );
       }
 
-      tokens.push({ type: "TEXT", value });
+      tokens.push(
+        createToken(
+          { type: "TEXT", value },
+          start,
+          index,
+          expression.slice(start, index),
+        ),
+      );
       continue;
     }
 
@@ -138,22 +219,22 @@ export function tokenizeFilter(expression: string): FilterToken[] {
     const lowered = raw.toLowerCase();
 
     if (lowered === "and") {
-      tokens.push({ type: "AND" });
+      tokens.push(createToken({ type: "AND" }, start, index, raw));
       continue;
     }
 
     if (lowered === "or") {
-      tokens.push({ type: "OR" });
+      tokens.push(createToken({ type: "OR" }, start, index, raw));
       continue;
     }
 
     if (lowered === "not") {
-      tokens.push({ type: "NOT" });
+      tokens.push(createToken({ type: "NOT" }, start, index, raw));
       continue;
     }
 
     if (lowered === "contains") {
-      tokens.push({ type: "CONTAINS" });
+      tokens.push(createToken({ type: "CONTAINS" }, start, index, raw));
       continue;
     }
 
@@ -161,14 +242,43 @@ export function tokenizeFilter(expression: string): FilterToken[] {
       continue;
     }
 
-    tokens.push({ type: "TEXT", value: raw });
+    tokens.push(createToken({ type: "TEXT", value: raw }, start, index, raw));
   }
 
   return tokens;
 }
 
-export function parseFilter(tokens: FilterToken[]): FilterNode {
+export function tokenizeFilter(expression: string): FilterToken[] {
+  return tokenizeFilterDetailed(expression).map(
+    ({ start, end, raw, ...token }) => token,
+  );
+}
+
+type ParseOptions = {
+  metadata?: FilterTokenWithRange[];
+  inputLength?: number;
+};
+
+function rangeFor(
+  metadata: FilterTokenWithRange[] | undefined,
+  tokenIndex: number,
+  fallback: number,
+): { start: number; end: number } {
+  const token = metadata?.[tokenIndex];
+  if (token) {
+    return { start: token.start, end: token.end };
+  }
+  return { start: fallback, end: fallback };
+}
+
+export function parseFilter(
+  tokens: FilterToken[],
+  options: ParseOptions = {},
+): FilterNode {
   let index = 0;
+  const metadata = options.metadata;
+  const inputLength =
+    options.inputLength ?? metadata?.[metadata.length - 1]?.end ?? 0;
 
   function parseExpression(): FilterNode {
     return parseOr();
@@ -212,7 +322,10 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
         continue;
       }
 
-      throw new Error("Unexpected token");
+      throw new FilterSyntaxError(
+        "Unexpected token",
+        rangeFor(metadata, index, inputLength),
+      );
     }
 
     return node;
@@ -231,7 +344,10 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
   function parsePrimary(): FilterNode {
     const token = tokens[index];
     if (!token) {
-      throw new Error("Unexpected end of expression");
+      throw new FilterSyntaxError("Unexpected end of expression", {
+        start: inputLength,
+        end: inputLength,
+      });
     }
 
     if (token.type === "TEXT") {
@@ -239,7 +355,10 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
       if (next && (next.type === "EQ" || next.type === "CONTAINS")) {
         const valueToken = tokens[index + 2];
         if (!valueToken || valueToken.type !== "TEXT") {
-          throw new Error("Expected comparison value");
+          throw new FilterSyntaxError(
+            "Expected comparison value",
+            rangeFor(metadata, index + 1, inputLength),
+          );
         }
 
         const operator = next.type === "EQ" ? "eq" : "contains";
@@ -257,25 +376,99 @@ export function parseFilter(tokens: FilterToken[]): FilterNode {
       index += 1;
       const node = parseExpression();
       if (tokens[index]?.type !== "RPAREN") {
-        throw new Error("Unmatched '('");
+        throw new FilterSyntaxError(
+          "Unmatched '('",
+          rangeFor(metadata, index, inputLength),
+        );
       }
       index += 1;
       return node;
     }
 
-    throw new Error("Expected filter term");
+    throw new FilterSyntaxError(
+      "Expected filter term",
+      rangeFor(metadata, index, inputLength),
+    );
   }
 
   const node = parseExpression();
 
   if (index < tokens.length) {
-    throw new Error("Unexpected trailing tokens");
+    throw new FilterSyntaxError(
+      "Unexpected trailing tokens",
+      rangeFor(metadata, index, inputLength),
+    );
   }
 
   return node;
 }
 
-const FIELD_ALIASES: Record<string, string[]> = {
+export type FilterAnalysis = {
+  tokens: FilterTokenWithRange[];
+  ast: FilterNode | null;
+  error: FilterSyntaxError | null;
+};
+
+export function analyzeFilter(expression: string): FilterAnalysis {
+  const trimmed = expression.trim();
+  if (trimmed.length === 0) {
+    return { tokens: [], ast: null, error: null };
+  }
+
+  let detailedTokens: FilterTokenWithRange[] = [];
+
+  try {
+    detailedTokens = tokenizeFilterDetailed(expression);
+  } catch (err) {
+    if (err instanceof FilterSyntaxError) {
+      return {
+        tokens: err.tokens ?? detailedTokens,
+        ast: null,
+        error: err,
+      };
+    }
+
+    return {
+      tokens: [],
+      ast: null,
+      error: new FilterSyntaxError(
+        err instanceof Error ? err.message : "Invalid display filter",
+        { start: expression.length, end: expression.length },
+      ),
+    };
+  }
+
+  if (detailedTokens.length === 0) {
+    return { tokens: detailedTokens, ast: null, error: null };
+  }
+
+  try {
+    const ast = parseFilter(
+      detailedTokens.map(({ start, end, raw, ...token }) => token),
+      { metadata: detailedTokens, inputLength: expression.length },
+    );
+    return { tokens: detailedTokens, ast, error: null };
+  } catch (err) {
+    if (err instanceof FilterSyntaxError) {
+      if (!err.tokens) {
+        err.tokens = detailedTokens;
+      }
+      return { tokens: detailedTokens, ast: null, error: err };
+    }
+
+    return {
+      tokens: detailedTokens,
+      ast: null,
+      error: new FilterSyntaxError(
+        err instanceof Error ? err.message : "Invalid display filter",
+        { start: expression.length, end: expression.length },
+        detailedTokens,
+      ),
+    };
+  }
+}
+
+export const FIELD_ALIASES: Record<string, string[]> = {
   src: ["src", "source"],
   source: ["src", "source"],
   dst: ["dst", "destination"],

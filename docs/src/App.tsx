@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   evaluateFilter,
-  parseFilter,
-  tokenizeFilter,
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
+import { downloadPacketExport, type PacketExportFormat } from "./exporter";
+import FilterInput, { type FilterChangeDetails } from "./FilterInput";
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
@@ -104,6 +104,7 @@ function App() {
   const [filterText, setFilterText] = useState("");
   const [filterAst, setFilterAst] = useState<FilterNode | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<PacketExportFormat>("json");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
@@ -348,6 +349,44 @@ function App() {
     setDragActive(false);
   }, []);
 
+  const onExportFormatChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setExportFormat(event.target.value as PacketExportFormat);
+    },
+    [],
+  );
+
+  const onSaveClick = useCallback(() => {
+    if (!isReady) {
+      return;
+    }
+
+    if (packets.length === 0) {
+      setError("No packets are available to export yet.");
+      return;
+    }
+
+    try {
+      const result = downloadPacketExport(packets, { format: exportFormat });
+      const label = packets.length === 1 ? "packet" : "packets";
+      setError((prev) =>
+        prev && prev.toLowerCase().includes("export") ? null : prev,
+      );
+      setStatus(
+        `Exported ${
+          packets.length
+        } ${label} as ${result.format.toUpperCase()}.`,
+      );
+    } catch (err) {
+      console.error("Packet export failed", err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to export the current packet list.";
+      setError(message);
+    }
+  }, [exportFormat, isReady, packets]);
+
   const onFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const input = event.target;
@@ -382,34 +421,10 @@ function App() {
   );
 
   const onFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      setFilterText(value);
-
-      const trimmed = value.trim();
-      if (trimmed.length === 0) {
-        setFilterAst(null);
-        setFilterError(null);
-        return;
-      }
-
-      try {
-        const tokens = tokenizeFilter(value);
-        if (tokens.length === 0) {
-          setFilterAst(null);
-          setFilterError(null);
-          return;
-        }
-        const node = parseFilter(tokens);
-        setFilterAst(node);
-        setFilterError(null);
-      } catch (err) {
-        console.debug("Failed to parse display filter", err);
-        setFilterAst(null);
-        setFilterError(
-          "Invalid display filter. Use AND/OR/NOT with parentheses or quotes.",
-        );
-      }
+    ({ text, ast, errorMessage }: FilterChangeDetails) => {
+      setFilterText(text);
+      setFilterAst(ast);
+      setFilterError(errorMessage);
     },
     [],
   );
@@ -637,10 +652,31 @@ function App() {
             <button type="button" onClick={onBrowseClick} disabled={!isReady}>
               Open Capture…
             </button>
-            <button type="button" disabled>
+            <button
+              type="button"
+              onClick={onSaveClick}
+              disabled={!isReady}
+              aria-disabled={!isReady ? true : undefined}
+            >
               Save As…
             </button>
+
             <button type="button" onClick={resetWorkspace} disabled={!isReady}>
+
+            <label className="toolbar-select" htmlFor="export-format">
+              <span>Format</span>
+              <select
+                id="export-format"
+                value={exportFormat}
+                onChange={onExportFormatChange}
+                disabled={!isReady}
+              >
+                <option value="json">JSON</option>
+                <option value="pcap">PCAP</option>
+              </select>
+            </label>
+            <button type="button" disabled>
+
               Restart Capture
             </button>
           </div>
@@ -656,21 +692,14 @@ function App() {
         </div>
 
         <div className="filter-bar">
-          <label className="filter-input" htmlFor="display-filter">
-            <span>Display filter</span>
-            <input
-              id="display-filter"
-              type="text"
-              placeholder="tcp && http"
-              spellCheck={false}
-              value={filterText}
-              onChange={onFilterChange}
-              aria-invalid={filterError ? true : false}
-              aria-describedby={
-                filterError ? "display-filter-error" : undefined
-              }
-            />
-          </label>
+          <FilterInput
+            id="display-filter"
+            label="Display filter"
+            placeholder="tcp && http"
+            value={filterText}
+            describedById={filterError ? "display-filter-error" : undefined}
+            onFilterChange={onFilterChange}
+          />
           <div className="filter-right">
             <div className="filter-meta" aria-live="polite">
               {filterError ? (
