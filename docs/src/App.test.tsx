@@ -1,6 +1,20 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import App from "./App";
 
 const { processPacketMock, loadProcessorMock } = vi.hoisted(() => ({
@@ -64,7 +78,8 @@ describe("App restart flow", () => {
     processPacketMock.mockReset();
     loadProcessorMock.mockReset();
     loadProcessorMock.mockResolvedValue(mockProcessor);
-    globalThis.FileReader = ControlledFileReader as unknown as typeof FileReader;
+    globalThis.FileReader =
+      ControlledFileReader as unknown as typeof FileReader;
   });
 
   afterEach(() => {
@@ -185,9 +200,7 @@ describe("App restart flow", () => {
     fireEvent.change(fileInput, { target: { files: [firstFile] } });
 
     await waitFor(() =>
-      expect(statusChip).toHaveTextContent(
-        "Processing first.pcap (1 bytes)…",
-      ),
+      expect(statusChip).toHaveTextContent("Processing first.pcap (1 bytes)…"),
     );
     expect(processPacketMock).not.toHaveBeenCalled();
 

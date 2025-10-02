@@ -10,7 +10,8 @@ import {
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
-const DEFAULT_STATUS_MESSAGE = "Drop packet captures or binary payloads to analyze.";
+const DEFAULT_STATUS_MESSAGE =
+  "Drop packet captures or binary payloads to analyze.";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -639,11 +640,7 @@ function App() {
             <button type="button" disabled>
               Save As…
             </button>
-            <button
-              type="button"
-              onClick={resetWorkspace}
-              disabled={!isReady}
-            >
+            <button type="button" onClick={resetWorkspace} disabled={!isReady}>
               Restart Capture
             </button>
           </div>
