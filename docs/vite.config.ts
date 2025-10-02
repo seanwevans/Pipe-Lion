@@ -10,4 +10,9 @@ const repositoryName = repository?.includes("/")
 export default defineConfig({
   base: repositoryName ? `/${repositoryName}/` : "/",
   plugins: [react()],
+  test: {
+    environment: "node",
+    environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
+    setupFiles: "./src/test/setup.ts",
+  },
 });
