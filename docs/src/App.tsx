@@ -354,11 +354,7 @@ function App() {
 
   const applyMaxFileSize = useCallback(
     (value: number, { persist = true }: { persist?: boolean } = {}) => {
-      const clampedValue = clamp(
-        value,
-        MIN_FILE_SIZE_MB,
-        MAX_FILE_SIZE_MB,
-      );
+      const clampedValue = clamp(value, MIN_FILE_SIZE_MB, MAX_FILE_SIZE_MB);
       setMaxFileSizeMB(clampedValue);
       if (persist) {
         saveMaxFileSizeMB(clampedValue);
