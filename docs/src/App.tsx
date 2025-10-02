@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   evaluateFilter,
-  parseFilter,
-  tokenizeFilter,
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
 import { downloadPacketExport, type PacketExportFormat } from "./exporter";
+import FilterInput, { type FilterChangeDetails } from "./FilterInput";
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
@@ -404,34 +403,10 @@ function App() {
   );
 
   const onFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      setFilterText(value);
-
-      const trimmed = value.trim();
-      if (trimmed.length === 0) {
-        setFilterAst(null);
-        setFilterError(null);
-        return;
-      }
-
-      try {
-        const tokens = tokenizeFilter(value);
-        if (tokens.length === 0) {
-          setFilterAst(null);
-          setFilterError(null);
-          return;
-        }
-        const node = parseFilter(tokens);
-        setFilterAst(node);
-        setFilterError(null);
-      } catch (err) {
-        console.debug("Failed to parse display filter", err);
-        setFilterAst(null);
-        setFilterError(
-          "Invalid display filter. Use AND/OR/NOT with parentheses or quotes.",
-        );
-      }
+    ({ text, ast, errorMessage }: FilterChangeDetails) => {
+      setFilterText(text);
+      setFilterAst(ast);
+      setFilterError(errorMessage);
     },
     [],
   );
@@ -695,21 +670,14 @@ function App() {
         </div>
 
         <div className="filter-bar">
-          <label className="filter-input" htmlFor="display-filter">
-            <span>Display filter</span>
-            <input
-              id="display-filter"
-              type="text"
-              placeholder="tcp && http"
-              spellCheck={false}
-              value={filterText}
-              onChange={onFilterChange}
-              aria-invalid={filterError ? true : false}
-              aria-describedby={
-                filterError ? "display-filter-error" : undefined
-              }
-            />
-          </label>
+          <FilterInput
+            id="display-filter"
+            label="Display filter"
+            placeholder="tcp && http"
+            value={filterText}
+            describedById={filterError ? "display-filter-error" : undefined}
+            onFilterChange={onFilterChange}
+          />
           <div className="filter-right">
             <div className="filter-meta" aria-live="polite">
               {filterError ? (
