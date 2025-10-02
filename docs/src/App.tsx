@@ -9,6 +9,12 @@ import {
 } from "./filter";
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
+import {
+  loadFilterText,
+  loadMaxFileSizeMB,
+  saveFilterText,
+  saveMaxFileSizeMB,
+} from "./storage";
 
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
@@ -346,29 +352,35 @@ function App() {
     fileInputRef.current?.click();
   }, []);
 
-  const onMaxFileSizeChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const parsedValue = Number(event.target.value);
-      if (Number.isNaN(parsedValue)) {
-        return;
-      }
-
+  const applyMaxFileSize = useCallback(
+    (value: number, { persist = true }: { persist?: boolean } = {}) => {
       const clampedValue = clamp(
-        parsedValue,
+        value,
         MIN_FILE_SIZE_MB,
         MAX_FILE_SIZE_MB,
       );
       setMaxFileSizeMB(clampedValue);
+      if (persist) {
+        saveMaxFileSizeMB(clampedValue);
+      }
+      return clampedValue;
     },
     [],
   );
 
-  const onFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
+  const applyFilterText = useCallback(
+    (value: string, { persist = true }: { persist?: boolean } = {}) => {
       setFilterText(value);
 
       const trimmed = value.trim();
+      if (persist) {
+        if (trimmed.length === 0) {
+          saveFilterText(null);
+        } else {
+          saveFilterText(value);
+        }
+      }
+
       if (trimmed.length === 0) {
         setFilterAst(null);
         setFilterError(null);
@@ -395,6 +407,45 @@ function App() {
     },
     [],
   );
+
+  const onMaxFileSizeChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const rawValue = event.target.value;
+      if (rawValue === "") {
+        saveMaxFileSizeMB(null);
+        applyMaxFileSize(DEFAULT_MAX_FILE_SIZE_MB, { persist: false });
+        return;
+      }
+
+      const parsedValue = Number(rawValue);
+      if (Number.isNaN(parsedValue)) {
+        return;
+      }
+
+      applyMaxFileSize(parsedValue);
+    },
+    [applyMaxFileSize],
+  );
+
+  const onFilterChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      applyFilterText(value);
+    },
+    [applyFilterText],
+  );
+
+  useEffect(() => {
+    const storedMaxFileSize = loadMaxFileSizeMB();
+    if (storedMaxFileSize !== null) {
+      applyMaxFileSize(storedMaxFileSize, { persist: false });
+    }
+
+    const storedFilterText = loadFilterText();
+    if (storedFilterText !== null) {
+      applyFilterText(storedFilterText, { persist: false });
+    }
+  }, [applyFilterText, applyMaxFileSize]);
 
   const totalPackets = packets.length;
 
@@ -632,7 +683,7 @@ function App() {
             </div>
           ) : (
             <div className="toolbar-hint">
-              Max file size can be adjusted in the filter bar.
+              Filter and size preferences are stored in this browser.
             </div>
           )}
         </div>
