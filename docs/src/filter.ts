@@ -97,7 +97,12 @@ function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
     if (char === "&") {
       if (expression[index + 1] === "&") {
         tokens.push(
-          createToken({ type: "AND" }, index, index + 2, expression.slice(index, index + 2)),
+          createToken(
+            { type: "AND" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
         );
         index += 2;
         continue;
@@ -112,7 +117,12 @@ function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
     if (char === "|") {
       if (expression[index + 1] === "|") {
         tokens.push(
-          createToken({ type: "OR" }, index, index + 2, expression.slice(index, index + 2)),
+          createToken(
+            { type: "OR" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
         );
         index += 2;
         continue;
@@ -133,7 +143,12 @@ function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
     if (char === "=") {
       if (expression[index + 1] === "=") {
         tokens.push(
-          createToken({ type: "EQ" }, index, index + 2, expression.slice(index, index + 2)),
+          createToken(
+            { type: "EQ" },
+            index,
+            index + 2,
+            expression.slice(index, index + 2),
+          ),
         );
         index += 2;
         continue;
@@ -182,7 +197,12 @@ function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
       }
 
       tokens.push(
-        createToken({ type: "TEXT", value }, start, index, expression.slice(start, index)),
+        createToken(
+          { type: "TEXT", value },
+          start,
+          index,
+          expression.slice(start, index),
+        ),
       );
       continue;
     }
@@ -229,7 +249,9 @@ function tokenizeFilterDetailed(expression: string): FilterTokenWithRange[] {
 }
 
 export function tokenizeFilter(expression: string): FilterToken[] {
-  return tokenizeFilterDetailed(expression).map(({ start, end, raw, ...token }) => token);
+  return tokenizeFilterDetailed(expression).map(
+    ({ start, end, raw, ...token }) => token,
+  );
 }
 
 type ParseOptions = {
@@ -322,10 +344,10 @@ export function parseFilter(
   function parsePrimary(): FilterNode {
     const token = tokens[index];
     if (!token) {
-      throw new FilterSyntaxError(
-        "Unexpected end of expression",
-        { start: inputLength, end: inputLength },
-      );
+      throw new FilterSyntaxError("Unexpected end of expression", {
+        start: inputLength,
+        end: inputLength,
+      });
     }
 
     if (token.type === "TEXT") {

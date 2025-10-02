@@ -70,9 +70,7 @@ const FIELD_ALIAS_MAP = (() => {
 
 const FIELD_ALIAS_KEYS = Array.from(FIELD_ALIAS_MAP.keys());
 
-const FIELD_SUGGESTIONS: SuggestionItem[] = Array.from(
-  FIELD_ALIAS_MAP.values(),
-)
+const FIELD_SUGGESTIONS: SuggestionItem[] = Array.from(FIELD_ALIAS_MAP.values())
   .map((info) => {
     const description =
       info.alias !== info.canonical ? `Field: ${info.canonical}` : undefined;
@@ -416,16 +414,14 @@ export default function FilterInput({
     [onFilterChange],
   );
 
-  const rememberFilter = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) {
-        return;
-      }
-      const next = historyStore.remember(trimmed);
-      setHistory(next);
-    },
-    []);
+  const rememberFilter = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    const next = historyStore.remember(trimmed);
+    setHistory(next);
+  }, []);
 
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -579,13 +575,10 @@ export default function FilterInput({
     ],
   );
 
-  const handleSuggestionMouseDown = useCallback(
-    (event: React.MouseEvent) => {
-      // Prevent blurring the input before selection is applied.
-      event.preventDefault();
-    },
-    [],
-  );
+  const handleSuggestionMouseDown = useCallback((event: React.MouseEvent) => {
+    // Prevent blurring the input before selection is applied.
+    event.preventDefault();
+  }, []);
 
   const handleSuggestionClick = useCallback(
     (item: SuggestionItem) => {
@@ -612,8 +605,14 @@ export default function FilterInput({
     if (!analysis.error) {
       return null;
     }
-    const start = Math.max(0, Math.min(analysis.error.start, inputValue.length));
-    const end = Math.max(start, Math.min(analysis.error.end, inputValue.length));
+    const start = Math.max(
+      0,
+      Math.min(analysis.error.start, inputValue.length),
+    );
+    const end = Math.max(
+      start,
+      Math.min(analysis.error.end, inputValue.length),
+    );
     return { start, end };
   }, [analysis.error, inputValue.length]);
 
