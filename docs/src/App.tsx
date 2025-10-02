@@ -10,6 +10,8 @@ import {
 import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 
+const DEFAULT_STATUS_MESSAGE = "Drop packet captures or binary payloads to analyze.";
+
 const BYTE_TO_HEX = (() => {
   const table = new Array<string>(256);
   for (let i = 0; i < 256; i += 1) {
@@ -88,9 +90,7 @@ type PacketSummaryEntry = {
 };
 
 function App() {
-  const [status, setStatus] = useState(
-    "Drop packet captures or binary payloads to analyze.",
-  );
+  const [status, setStatus] = useState(DEFAULT_STATUS_MESSAGE);
 
   const [packets, setPackets] = useState<WasmPacketRecord[]>([]);
   const [selectedPacketIndex, setSelectedPacketIndex] = useState<number | null>(
@@ -116,6 +116,17 @@ function App() {
       fileReaderRef.current = null;
     }
   }, []);
+
+  const resetWorkspace = useCallback(() => {
+    uploadTokenRef.current += 1;
+    abortActiveReader();
+    processingQueueRef.current = Promise.resolve();
+    setPackets([]);
+    setSelectedPacketIndex(null);
+    setStatus(DEFAULT_STATUS_MESSAGE);
+    setError(null);
+    setDragActive(false);
+  }, [abortActiveReader]);
 
   const readFileBytes = useCallback(
     (file: File) =>
@@ -167,7 +178,7 @@ function App() {
           return;
         }
         setIsReady(true);
-        setStatus("Drop packet captures or binary payloads to analyze.");
+        setStatus(DEFAULT_STATUS_MESSAGE);
       })
       .catch((err) => {
         console.error("Failed to load Wasm module", err);
@@ -277,7 +288,7 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setStatus("Drop a packet capture or binary payload to analyze.");
+        setStatus(DEFAULT_STATUS_MESSAGE);
         if (!isMountedRef.current) {
           return;
         }
@@ -293,8 +304,14 @@ function App() {
 
   const enqueueFile = useCallback(
     (file: File) => {
+      const queueToken = uploadTokenRef.current;
       processingQueueRef.current = processingQueueRef.current
-        .then(() => handleFile(file))
+        .then(() => {
+          if (uploadTokenRef.current !== queueToken) {
+            return;
+          }
+          return handleFile(file);
+        })
         .catch((err) => {
           console.error("Queued file processing failed", err);
         });
@@ -622,7 +639,11 @@ function App() {
             <button type="button" disabled>
               Save As…
             </button>
-            <button type="button" disabled>
+            <button
+              type="button"
+              onClick={resetWorkspace}
+              disabled={!isReady}
+            >
               Restart Capture
             </button>
           </div>
