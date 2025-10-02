@@ -67,7 +67,10 @@ export function createStoredList(key: string, limit: number): StoredList {
       try {
         storage.removeItem(key);
       } catch (removeErr) {
-        console.warn("Failed to reset stored list after parse error", removeErr);
+        console.warn(
+          "Failed to reset stored list after parse error",
+          removeErr,
+        );
       }
       return [];
     }
@@ -80,7 +83,10 @@ export function createStoredList(key: string, limit: number): StoredList {
         try {
           storage.removeItem(key);
         } catch (err) {
-          console.warn("Failed to clear stored list with non-positive limit", err);
+          console.warn(
+            "Failed to clear stored list with non-positive limit",
+            err,
+          );
         }
       }
       return [];
