@@ -1,91 +1,70 @@
-const memoryStore = new Map<string, string>();
+const MAX_FILE_SIZE_KEY = "pipe-lion:max-file-size-mb";
+const FILTER_TEXT_KEY = "pipe-lion:filter-text";
 
-type StorageLike = {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-};
+type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-function getBrowserStorage(): StorageLike {
-  if (typeof window !== "undefined" && window.localStorage) {
-    try {
-      const testKey = "pipe-lion-storage-test";
-      window.localStorage.setItem(testKey, "1");
-      window.localStorage.removeItem(testKey);
-      return window.localStorage;
-    } catch (err) {
-      console.debug("Falling back to in-memory storage", err);
-    }
+function getLocalStorage(): StorageLike | null {
+  if (typeof window === "undefined") {
+    return null;
   }
 
-  return {
-    getItem: (key) => memoryStore.get(key) ?? null,
-    setItem: (key, value) => {
-      memoryStore.set(key, value);
-    },
-    removeItem: (key) => {
-      memoryStore.delete(key);
-    },
-  };
+  try {
+    return window.localStorage;
+  } catch (err) {
+    console.warn("Unable to access localStorage", err);
+    return null;
+  }
 }
 
-function normaliseList(input: unknown): string[] {
-  if (!Array.isArray(input)) {
-    return [];
+export function loadMaxFileSizeMB(): number | null {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return null;
   }
 
-  return input
-    .map((value) => (typeof value === "string" ? value : null))
-    .filter((value): value is string => value !== null);
+  const value = storage.getItem(MAX_FILE_SIZE_KEY);
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function createStoredList(key: string, limit = 5) {
-  function load(): string[] {
-    const storage = getBrowserStorage();
-    const raw = storage.getItem(key);
-    if (!raw) {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      return normaliseList(parsed).slice(0, limit);
-    } catch (err) {
-      console.debug("Failed to parse stored list", err);
-      return [];
-    }
+export function saveMaxFileSizeMB(value: number | null): void {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
   }
 
-  function save(values: string[]) {
-    const storage = getBrowserStorage();
-    if (values.length === 0) {
-      storage.removeItem(key);
-      return;
-    }
-
-    storage.setItem(key, JSON.stringify(values.slice(0, limit)));
+  if (value === null) {
+    storage.removeItem(MAX_FILE_SIZE_KEY);
+    return;
   }
 
-  function remember(value: string): string[] {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return load();
-    }
-
-    const existing = load();
-    const deduped = existing.filter((entry) => entry !== trimmed);
-    deduped.unshift(trimmed);
-    const result = deduped.slice(0, limit);
-    save(result);
-    return result;
-  }
-
-  function clear() {
-    const storage = getBrowserStorage();
-    storage.removeItem(key);
-  }
-
-  return { load, save, remember, clear };
+  storage.setItem(MAX_FILE_SIZE_KEY, String(value));
 }
 
-export type StoredList = ReturnType<typeof createStoredList>;
+export function loadFilterText(): string | null {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return null;
+  }
+
+  return storage.getItem(FILTER_TEXT_KEY);
+}
+
+export function saveFilterText(value: string | null): void {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
+  }
+
+  if (value === null) {
+    storage.removeItem(FILTER_TEXT_KEY);
+    return;
+  }
+
+  storage.setItem(FILTER_TEXT_KEY, value);
+}
+
