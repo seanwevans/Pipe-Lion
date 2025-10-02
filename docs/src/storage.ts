@@ -67,4 +67,3 @@ export function saveFilterText(value: string | null): void {
 
   storage.setItem(FILTER_TEXT_KEY, value);
 }
-
