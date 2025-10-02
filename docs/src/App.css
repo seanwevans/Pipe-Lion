@@ -137,6 +137,31 @@
   gap: 0.6rem;
 }
 
+.toolbar-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: rgba(191, 219, 254, 0.85);
+}
+
+.toolbar-select select {
+  background: #0b1730;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 7rem;
+}
+
+.toolbar-select select:disabled {
+  background: #111827;
+  border-color: rgba(148, 163, 184, 0.35);
+  color: rgba(148, 163, 184, 0.55);
+}
+
 .toolbar-buttons button,
 .drop-overlay button {
   background: linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%);
