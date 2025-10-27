@@ -508,7 +508,7 @@ function App() {
       setFilterError(
         details.error
           ? details.errorMessage ??
-            "Invalid display filter. Use AND/OR/NOT with parentheses or quotes."
+              "Invalid display filter. Use AND/OR/NOT with parentheses or quotes."
           : null,
       );
     },
