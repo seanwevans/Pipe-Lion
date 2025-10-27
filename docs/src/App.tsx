@@ -429,7 +429,7 @@ function App() {
       {
         persist = true,
         details,
-      }: { persist?: boolean; details?: FilterChangeDetails } = {},
+      }: { persist?: boolean; details?: FilterChangeDetails | null } = {},
     ) => {
       setFilterText(value);
 
@@ -450,7 +450,14 @@ function App() {
 
       if (details) {
         setFilterAst(details.ast);
-        setFilterError(details.errorMessage);
+        if (details.error) {
+          setFilterError(
+            details.errorMessage ??
+              "Invalid display filter. Use AND/OR/NOT with parentheses or quotes.",
+          );
+        } else {
+          setFilterError(null);
+        }
         return;
       }
 
@@ -497,6 +504,13 @@ function App() {
   const onFilterChange = useCallback(
     (details: FilterChangeDetails) => {
       applyFilterText(details.text, { details });
+      setFilterAst(details.ast);
+      setFilterError(
+        details.error
+          ? details.errorMessage ??
+            "Invalid display filter. Use AND/OR/NOT with parentheses or quotes."
+          : null,
+      );
     },
     [applyFilterText],
   );
