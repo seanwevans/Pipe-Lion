@@ -746,8 +746,9 @@ function App() {
             </button>
 
             <button type="button" onClick={resetWorkspace} disabled={!isReady}>
-              Reset Workspace
+              Restart Capture
             </button>
+
             <label className="toolbar-select" htmlFor="export-format">
               <span>Format</span>
               <select
