@@ -733,7 +733,8 @@ function App() {
             </button>
 
             <button type="button" onClick={resetWorkspace} disabled={!isReady}>
-
+              Restart Capture
+            </button>
             <label className="toolbar-select" htmlFor="export-format">
               <span>Format</span>
               <select
@@ -746,10 +747,6 @@ function App() {
                 <option value="pcap">PCAP</option>
               </select>
             </label>
-            <button type="button" disabled>
-
-              Restart Capture
-            </button>
           </div>
           {error ? (
             <div className="toolbar-error" role="alert" aria-live="assertive">
