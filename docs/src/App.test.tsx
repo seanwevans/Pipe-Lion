@@ -41,10 +41,8 @@ class ControlledFileReader implements Partial<FileReader> {
   public result: string | ArrayBuffer | null = null;
   public error: DOMException | null = null;
   private aborted = false;
-  private file: File | null = null;
 
-  readAsArrayBuffer(file: File) {
-    this.file = file;
+  readAsArrayBuffer(_file: File) {
     activeReaders.push(this);
   }
 
@@ -54,7 +52,7 @@ class ControlledFileReader implements Partial<FileReader> {
     }
     this.aborted = true;
     this.result = null;
-    const event = new ProgressEvent("abort");
+    const event = new ProgressEvent("abort") as ProgressEvent<FileReader>;
     this.onabort?.call(this as unknown as FileReader, event);
   }
 
@@ -64,7 +62,7 @@ class ControlledFileReader implements Partial<FileReader> {
     }
     const buffer = data ?? new ArrayBuffer(4);
     this.result = buffer;
-    const event = new ProgressEvent("load");
+    const event = new ProgressEvent("load") as ProgressEvent<FileReader>;
     this.onload?.call(this as unknown as FileReader, event);
   }
 }
