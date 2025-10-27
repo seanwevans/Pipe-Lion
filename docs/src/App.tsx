@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   evaluateFilter,
+  parseFilter,
+  tokenizeFilter,
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
@@ -422,7 +424,13 @@ function App() {
   );
 
   const applyFilterText = useCallback(
-    (value: string, { persist = true }: { persist?: boolean } = {}) => {
+    (
+      value: string,
+      {
+        persist = true,
+        details,
+      }: { persist?: boolean; details?: FilterChangeDetails | null } = {},
+    ) => {
       setFilterText(value);
 
       const trimmed = value.trim();
@@ -437,6 +445,19 @@ function App() {
       if (trimmed.length === 0) {
         setFilterAst(null);
         setFilterError(null);
+        return;
+      }
+
+      if (details) {
+        setFilterAst(details.ast);
+        if (details.error) {
+          setFilterError(
+            details.errorMessage ??
+              "Invalid display filter. Use AND/OR/NOT with parentheses or quotes.",
+          );
+        } else {
+          setFilterError(null);
+        }
         return;
       }
 
@@ -481,9 +502,15 @@ function App() {
   );
 
   const onFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      applyFilterText(value);
+    (details: FilterChangeDetails) => {
+      applyFilterText(details.text, { details });
+      setFilterAst(details.ast);
+      setFilterError(
+        details.error
+          ? details.errorMessage ??
+            "Invalid display filter. Use AND/OR/NOT with parentheses or quotes."
+          : null,
+      );
     },
     [applyFilterText],
   );
