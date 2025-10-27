@@ -50,7 +50,7 @@ const FIELD_ALIAS_MAP = (() => {
     { alias: string; canonical: string; aliases: string[] }
   >();
 
-  for (const [canonical, aliases] of Object.entries(FIELD_ALIASES)) {
+  for (const aliases of Object.values(FIELD_ALIASES)) {
     const canonicalName = aliases[0];
     const uniqueAliases = Array.from(new Set(aliases));
     for (const alias of uniqueAliases) {
@@ -497,8 +497,6 @@ export default function FilterInput({
         }
         if (needsTrailingSpace) {
           insertion = `${insertion} `;
-        } else if (context !== "value") {
-          insertion = `${insertion}`;
         }
       } else if (context === "field") {
         if (needsLeadingSpace) {

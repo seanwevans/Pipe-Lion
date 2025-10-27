@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
   evaluateFilter,
+  parseFilter,
+  tokenizeFilter,
   type FilterNode,
   type PacketRecord as FilterPacketRecord,
 } from "./filter";
@@ -422,7 +424,13 @@ function App() {
   );
 
   const applyFilterText = useCallback(
-    (value: string, { persist = true }: { persist?: boolean } = {}) => {
+    (
+      value: string,
+      {
+        persist = true,
+        details,
+      }: { persist?: boolean; details?: FilterChangeDetails } = {},
+    ) => {
       setFilterText(value);
 
       const trimmed = value.trim();
@@ -437,6 +445,12 @@ function App() {
       if (trimmed.length === 0) {
         setFilterAst(null);
         setFilterError(null);
+        return;
+      }
+
+      if (details) {
+        setFilterAst(details.ast);
+        setFilterError(details.errorMessage);
         return;
       }
 
@@ -481,9 +495,8 @@ function App() {
   );
 
   const onFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      applyFilterText(value);
+    (details: FilterChangeDetails) => {
+      applyFilterText(details.text, { details });
     },
     [applyFilterText],
   );
@@ -733,7 +746,8 @@ function App() {
             </button>
 
             <button type="button" onClick={resetWorkspace} disabled={!isReady}>
-
+              Reset Workspace
+            </button>
             <label className="toolbar-select" htmlFor="export-format">
               <span>Format</span>
               <select
@@ -747,7 +761,6 @@ function App() {
               </select>
             </label>
             <button type="button" disabled>
-
               Restart Capture
             </button>
           </div>
