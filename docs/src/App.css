@@ -607,3 +607,16 @@
     grid-template-rows: repeat(3, minmax(200px, auto));
   }
 }
+
+.diagnostics-block h3 {
+  margin: 0.25rem 0;
+  font-size: 0.95rem;
+}
+
+.diagnostics-errors h3 {
+  color: #fca5a5;
+}
+
+.diagnostics-warnings h3 {
+  color: #fcd34d;
+}
