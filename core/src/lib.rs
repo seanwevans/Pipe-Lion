@@ -139,21 +139,81 @@ struct PacketAnalysis {
 }
 
 fn build_summary_from_layers(layers: &DecodedLayers, default: String) -> String {
-    if let Some(icmp) = &layers.icmp {
-        if let Some(ipv4) = &layers.ipv4 {
-            return format!(
-                "{} {} {ARROW} {} ({})",
-                icmp.version, ipv4.source, ipv4.destination, icmp.description
-            );
-        }
-        if let Some(ipv6) = &layers.ipv6 {
-            return format!(
-                "{} {} {ARROW} {} ({})",
-                icmp.version, ipv6.source, ipv6.destination, icmp.description
-            );
-        }
+    format_summary_by_protocol(layers).unwrap_or(default)
+}
+
+enum SummaryProtocol {
+    Icmp,
+    Tcp,
+    Udp,
+}
+
+fn detect_summary_protocol(layers: &DecodedLayers) -> Option<SummaryProtocol> {
+    if layers.icmp.is_some() {
+        Some(SummaryProtocol::Icmp)
+    } else if layers.tcp.is_some() {
+        Some(SummaryProtocol::Tcp)
+    } else if layers.udp.is_some() {
+        Some(SummaryProtocol::Udp)
+    } else {
+        None
     }
-    default
+}
+
+fn format_icmp_summary(layers: &DecodedLayers, icmp: &IcmpHeader) -> Option<String> {
+    if let Some(ipv4) = &layers.ipv4 {
+        return Some(format!(
+            "{} {} {ARROW} {} ({})",
+            icmp.version, ipv4.source, ipv4.destination, icmp.description
+        ));
+    }
+    if let Some(ipv6) = &layers.ipv6 {
+        return Some(format!(
+            "{} {} {ARROW} {} ({})",
+            icmp.version, ipv6.source, ipv6.destination, icmp.description
+        ));
+    }
+    None
+}
+
+fn format_tcp_summary(layers: &DecodedLayers, tcp: &TcpHeader) -> Option<String> {
+    if let Some(ipv4) = &layers.ipv4 {
+        return Some(format!(
+            "TCP {}:{} {ARROW} {}:{}",
+            ipv4.source, tcp.source_port, ipv4.destination, tcp.destination_port
+        ));
+    }
+    if let Some(ipv6) = &layers.ipv6 {
+        return Some(format!(
+            "TCP {}:{} {ARROW} {}:{}",
+            ipv6.source, tcp.source_port, ipv6.destination, tcp.destination_port
+        ));
+    }
+    None
+}
+
+fn format_udp_summary(layers: &DecodedLayers, udp: &UdpHeader) -> Option<String> {
+    if let Some(ipv4) = &layers.ipv4 {
+        return Some(format!(
+            "UDP {}:{} {ARROW} {}:{}",
+            ipv4.source, udp.source_port, ipv4.destination, udp.destination_port
+        ));
+    }
+    if let Some(ipv6) = &layers.ipv6 {
+        return Some(format!(
+            "UDP {}:{} {ARROW} {}:{}",
+            ipv6.source, udp.source_port, ipv6.destination, udp.destination_port
+        ));
+    }
+    None
+}
+
+fn format_summary_by_protocol(layers: &DecodedLayers) -> Option<String> {
+    match detect_summary_protocol(layers)? {
+        SummaryProtocol::Icmp => format_icmp_summary(layers, layers.icmp.as_ref()?),
+        SummaryProtocol::Tcp => format_tcp_summary(layers, layers.tcp.as_ref()?),
+        SummaryProtocol::Udp => format_udp_summary(layers, layers.udp.as_ref()?),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -985,4 +1045,87 @@ pub fn process_packet(data: &[u8]) -> String {
         }
     };
     serialize_result(&result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_icmpv4_summary() {
+        let layers = DecodedLayers {
+            ipv4: Some(Ipv4Header {
+                source: "192.168.1.10".to_string(),
+                destination: "192.168.1.1".to_string(),
+                protocol: 1,
+                header_length: 20,
+                total_length: 84,
+                ttl: 64,
+            }),
+            icmp: Some(IcmpHeader {
+                icmp_type: 8,
+                icmp_code: 0,
+                description: "Echo Request".to_string(),
+                version: "ICMP".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "fallback".to_string());
+        assert_eq!(summary, "ICMP 192.168.1.10 → 192.168.1.1 (Echo Request)");
+    }
+
+    #[test]
+    fn builds_icmpv6_summary() {
+        let layers = DecodedLayers {
+            ipv6: Some(Ipv6Header {
+                source: "2001:db8::1".to_string(),
+                destination: "2001:db8::2".to_string(),
+                next_header: 58,
+                payload_length: 32,
+                hop_limit: 64,
+            }),
+            icmp: Some(IcmpHeader {
+                icmp_type: 128,
+                icmp_code: 0,
+                description: "Echo Request".to_string(),
+                version: "ICMPv6".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "fallback".to_string());
+        assert_eq!(summary, "ICMPv6 2001:db8::1 → 2001:db8::2 (Echo Request)");
+    }
+
+    #[test]
+    fn uses_fallback_when_required_layer_missing() {
+        let layers = DecodedLayers {
+            icmp: Some(IcmpHeader {
+                icmp_type: 3,
+                icmp_code: 1,
+                description: "Host Unreachable".to_string(),
+                version: "ICMP".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "default summary".to_string());
+        assert_eq!(summary, "default summary");
+    }
+
+    #[test]
+    fn uses_fallback_for_unsupported_protocol() {
+        let layers = DecodedLayers {
+            ethernet: Some(EthernetHeader {
+                source_mac: "00:11:22:33:44:55".to_string(),
+                destination_mac: "66:77:88:99:aa:bb".to_string(),
+                ethertype: 0x86DD,
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "unsupported".to_string());
+        assert_eq!(summary, "unsupported");
+    }
 }
