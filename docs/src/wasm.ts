@@ -207,17 +207,26 @@ const parseProcessingResult = (
             const legacySource =
               record.source ?? record.src ?? record.Source ?? record.Src;
             const legacyDestination =
-              record.destination ?? record.dst ?? record.Destination ?? record.Dst;
+              record.destination ??
+              record.dst ??
+              record.Destination ??
+              record.Dst;
 
             return {
               time: toStringOrFallback(record.time, "0.000000"),
               source: toStringOrFallback(legacySource, "—"),
               destination: toStringOrFallback(legacyDestination, "—"),
-              protocol: toStringOrFallback(record.protocol ?? record.proto, "—"),
+              protocol: toStringOrFallback(
+                record.protocol ?? record.proto,
+                "—",
+              ),
               length: Math.max(
                 0,
                 Math.round(
-                  toFiniteNumberOrFallback(record.length ?? record.len ?? record.size, fallbackLength),
+                  toFiniteNumberOrFallback(
+                    record.length ?? record.len ?? record.size,
+                    fallbackLength,
+                  ),
                 ),
               ),
               info: toStringOrFallback(record.info ?? record.summary, "—"),
