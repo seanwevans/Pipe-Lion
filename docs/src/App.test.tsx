@@ -16,6 +16,7 @@ import {
   vi,
 } from "vitest";
 import App from "./App";
+import * as storage from "./storage";
 
 const { processPacketMock, loadProcessorMock } = vi.hoisted(() => ({
   processPacketMock: vi.fn(),
@@ -234,6 +235,19 @@ describe("App restart flow", () => {
     expect(
       screen.getByText("Drop a capture to populate the packet list."),
     ).toBeInTheDocument();
+  });
+
+  it("shows non-blocking hint when preference persistence fails", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(storage, "saveFilterText").mockReturnValue(false);
+
+    render(<App />);
+
+    const filterInput = await screen.findByLabelText("Display filter");
+    await user.type(filterInput, "tcp");
+
+    expect(await screen.findByText("Preferences not persisted.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 

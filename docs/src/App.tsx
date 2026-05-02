@@ -111,6 +111,7 @@ function App() {
   const [filterAst, setFilterAst] = useState<FilterNode | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<PacketExportFormat>("json");
+  const [preferencesPersistError, setPreferencesPersistError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const uploadTokenRef = useRef(0);
@@ -415,7 +416,8 @@ function App() {
       const clampedValue = clamp(value, MIN_FILE_SIZE_MB, MAX_FILE_SIZE_MB);
       setMaxFileSizeMB(clampedValue);
       if (persist) {
-        saveMaxFileSizeMB(clampedValue);
+        const saved = saveMaxFileSizeMB(clampedValue);
+        setPreferencesPersistError((prev) => prev || !saved);
       }
       return clampedValue;
     },
@@ -434,11 +436,13 @@ function App() {
 
       const trimmed = value.trim();
       if (persist) {
+        let saved = true;
         if (trimmed.length === 0) {
-          saveFilterText(null);
+          saved = saveFilterText(null);
         } else {
-          saveFilterText(value);
+          saved = saveFilterText(value);
         }
+        setPreferencesPersistError((prev) => prev || !saved);
       }
 
       if (trimmed.length === 0) {
@@ -485,7 +489,8 @@ function App() {
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const rawValue = event.target.value;
       if (rawValue === "") {
-        saveMaxFileSizeMB(null);
+        const saved = saveMaxFileSizeMB(null);
+        setPreferencesPersistError((prev) => prev || !saved);
         applyMaxFileSize(DEFAULT_MAX_FILE_SIZE_MB, { persist: false });
         return;
       }
@@ -779,6 +784,8 @@ function App() {
             <div className="toolbar-error" role="alert" aria-live="assertive">
               {error}
             </div>
+          ) : preferencesPersistError ? (
+            <div className="toolbar-hint">Preferences not persisted.</div>
           ) : (
             <div className="toolbar-hint">
               Filter and size preferences are stored in this browser.
