@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createStoredList,
-  saveFilterText,
-  saveMaxFileSizeMB,
-} from "./storage";
+import { createStoredList, saveFilterText, saveMaxFileSizeMB } from "./storage";
 
 afterEach(() => {
   vi.restoreAllMocks();

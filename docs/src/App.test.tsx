@@ -246,7 +246,9 @@ describe("App restart flow", () => {
     const filterInput = await screen.findByLabelText("Display filter");
     await user.type(filterInput, "tcp");
 
-    expect(await screen.findByText("Preferences not persisted.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Preferences not persisted."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
