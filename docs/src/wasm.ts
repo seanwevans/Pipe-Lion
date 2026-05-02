@@ -16,7 +16,12 @@ export interface DecodedLayers {
   ipv6?: { source: string; destination: string; next_header: number };
   tcp?: { source_port: number; destination_port: number };
   udp?: { source_port: number; destination_port: number; length: number };
-  icmp?: { icmp_type: number; icmp_code: number; description: string; version: string };
+  icmp?: {
+    icmp_type: number;
+    icmp_code: number;
+    description: string;
+    version: string;
+  };
 }
 
 export interface PacketProcessingResult {
