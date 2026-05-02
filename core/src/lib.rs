@@ -27,6 +27,7 @@ struct PacketSummary {
 
 #[derive(Serialize)]
 struct Packet {
+    layers: Option<DecodedLayers>,
     time: String,
     source: String,
     destination: String,
@@ -34,6 +35,63 @@ struct Packet {
     length: usize,
     info: String,
     payload: Vec<u8>,
+}
+
+#[derive(Serialize, Clone)]
+struct EthernetHeader {
+    source_mac: String,
+    destination_mac: String,
+    ethertype: u16,
+}
+
+#[derive(Serialize, Clone)]
+struct Ipv4Header {
+    source: String,
+    destination: String,
+    protocol: u8,
+    header_length: usize,
+    total_length: usize,
+    ttl: u8,
+}
+
+#[derive(Serialize, Clone)]
+struct Ipv6Header {
+    source: String,
+    destination: String,
+    next_header: u8,
+    payload_length: usize,
+    hop_limit: u8,
+}
+
+#[derive(Serialize, Clone)]
+struct TcpHeader {
+    source_port: u16,
+    destination_port: u16,
+}
+
+#[derive(Serialize, Clone)]
+struct UdpHeader {
+    source_port: u16,
+    destination_port: u16,
+    length: u16,
+}
+
+#[derive(Serialize, Clone)]
+struct IcmpHeader {
+    icmp_type: u8,
+    icmp_code: u8,
+    description: String,
+    version: String,
+}
+
+#[derive(Serialize, Clone, Default)]
+struct DecodedLayers {
+    ethernet: Option<EthernetHeader>,
+    ipv4: Option<Ipv4Header>,
+    ipv6: Option<Ipv6Header>,
+    tcp: Option<TcpHeader>,
+    udp: Option<UdpHeader>,
+    icmp: Option<IcmpHeader>,
 }
 
 #[derive(Serialize)]
@@ -44,6 +102,7 @@ struct PacketProcessingResult {
 }
 
 struct PacketMetadata {
+    layers: Option<DecodedLayers>,
     time: String,
     source: String,
     destination: String,
@@ -73,9 +132,28 @@ impl InterfaceInfo {
 #[derive(Default)]
 struct PacketAnalysis {
     source: String,
+    layers: DecodedLayers,
     destination: String,
     protocol: String,
     summary: String,
+}
+
+fn build_summary_from_layers(layers: &DecodedLayers, default: String) -> String {
+    if let Some(icmp) = &layers.icmp {
+        if let Some(ipv4) = &layers.ipv4 {
+            return format!(
+                "{} {} {ARROW} {} ({})",
+                icmp.version, ipv4.source, ipv4.destination, icmp.description
+            );
+        }
+        if let Some(ipv6) = &layers.ipv6 {
+            return format!(
+                "{} {} {ARROW} {} ({})",
+                icmp.version, ipv6.source, ipv6.destination, icmp.description
+            );
+        }
+    }
+    default
 }
 
 #[derive(Clone, Copy)]
@@ -229,6 +307,7 @@ fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
         protocol,
         summary,
         length,
+        layers,
     } = meta;
 
     let hex_preview = build_hex_preview(payload, 32);
@@ -247,6 +326,7 @@ fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
     let info = serde_json::to_string(&summary_payload).unwrap_or_else(|_| summary.clone());
 
     Packet {
+        layers,
         time,
         source,
         destination,
@@ -275,6 +355,7 @@ fn analyze_payload(linktype: u32, payload: &[u8]) -> PacketAnalysis {
 fn fallback_analysis(linktype: u32, length: usize) -> PacketAnalysis {
     PacketAnalysis {
         source: EM_DASH.to_string(),
+        layers: DecodedLayers::default(),
         destination: EM_DASH.to_string(),
         protocol: format!("LINKTYPE {linktype}"),
         summary: format!("Captured {length} bytes (linktype {linktype})"),
@@ -308,7 +389,12 @@ fn analyze_ethernet_frame(frame: &[u8]) -> PacketAnalysis {
     }
     let dst_mac = format_mac(&frame[0..6]);
     let src_mac = format_mac(&frame[6..12]);
-    let ethertype = u16::from_be_bytes(frame[12..14].try_into().unwrap());
+    let ethertype = u16::from_be_bytes(frame[12..14].try_into().ok().unwrap_or([0, 0]));
+    let ethernet = EthernetHeader {
+        source_mac: src_mac.clone(),
+        destination_mac: dst_mac.clone(),
+        ethertype,
+    };
     match ethertype {
         0x0800 => {
             if let Some(mut analysis) = parse_ipv4_packet(&frame[14..]) {
@@ -318,6 +404,7 @@ fn analyze_ethernet_frame(frame: &[u8]) -> PacketAnalysis {
                 if analysis.destination == EM_DASH {
                     analysis.destination = dst_mac.clone();
                 }
+                analysis.layers.ethernet = Some(ethernet.clone());
                 return analysis;
             }
         }
@@ -329,6 +416,7 @@ fn analyze_ethernet_frame(frame: &[u8]) -> PacketAnalysis {
                 if analysis.destination == EM_DASH {
                     analysis.destination = dst_mac.clone();
                 }
+                analysis.layers.ethernet = Some(ethernet.clone());
                 return analysis;
             }
         }
@@ -347,6 +435,10 @@ fn analyze_ethernet_frame(frame: &[u8]) -> PacketAnalysis {
             "Ethernet 0x{ethertype:04X} {ARROW} captured {} bytes",
             frame.len()
         ),
+        layers: DecodedLayers {
+            ethernet: Some(ethernet),
+            ..DecodedLayers::default()
+        },
     }
 }
 
@@ -362,7 +454,7 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<PacketAnalysis> {
     if ihl < 20 || packet.len() < ihl {
         return None;
     }
-    let total_length = u16::from_be_bytes(packet[2..4].try_into().unwrap()) as usize;
+    let total_length = u16::from_be_bytes(packet[2..4].try_into().ok()?) as usize;
     if total_length < ihl {
         return None;
     }
@@ -382,15 +474,43 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<PacketAnalysis> {
         destination: dst_ip.clone(),
         protocol: protocol_name.to_string(),
         summary: format!("{protocol_name} {src_ip} {ARROW} {dst_ip}"),
+        layers: DecodedLayers {
+            ipv4: Some(Ipv4Header {
+                source: src_ip.clone(),
+                destination: dst_ip.clone(),
+                protocol,
+                header_length: ihl,
+                total_length,
+                ttl: packet[8],
+            }),
+            ..DecodedLayers::default()
+        },
     };
 
     match protocol {
         6 | 17 | 132 => {
             if payload.len() >= 4 {
-                let src_port = u16::from_be_bytes(payload[0..2].try_into().unwrap());
-                let dst_port = u16::from_be_bytes(payload[2..4].try_into().unwrap());
+                let src_port = u16::from_be_bytes(payload[0..2].try_into().ok()?);
+                let dst_port = u16::from_be_bytes(payload[2..4].try_into().ok()?);
                 analysis.source = format_port(&src_ip, src_port);
                 analysis.destination = format_port(&dst_ip, dst_port);
+                if protocol == 6 {
+                    analysis.layers.tcp = Some(TcpHeader {
+                        source_port: src_port,
+                        destination_port: dst_port,
+                    });
+                } else if protocol == 17 {
+                    let udp_len = if payload.len() >= 6 {
+                        u16::from_be_bytes(payload[4..6].try_into().ok().unwrap_or([0, 0]))
+                    } else {
+                        0
+                    };
+                    analysis.layers.udp = Some(UdpHeader {
+                        source_port: src_port,
+                        destination_port: dst_port,
+                        length: udp_len,
+                    });
+                }
                 analysis.summary = format!(
                     "{protocol_name} {} {ARROW} {}",
                     analysis.source, analysis.destination
@@ -402,12 +522,19 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 let icmp_type = payload[0];
                 let icmp_code = payload[1];
                 let description = describe_icmpv4(icmp_type, icmp_code);
+                analysis.layers.icmp = Some(IcmpHeader {
+                    icmp_type,
+                    icmp_code,
+                    description: description.clone(),
+                    version: "ICMP".to_string(),
+                });
                 analysis.summary = format!("ICMP {src_ip} {ARROW} {dst_ip} ({description})");
             }
         }
         _ => {}
     }
 
+    analysis.summary = build_summary_from_layers(&analysis.layers, analysis.summary);
     Some(analysis)
 }
 
@@ -471,15 +598,42 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<PacketAnalysis> {
         destination: dst_ip.clone(),
         protocol: protocol_name.to_string(),
         summary: format!("{protocol_name} {src_ip} {ARROW} {dst_ip}"),
+        layers: DecodedLayers {
+            ipv6: Some(Ipv6Header {
+                source: src_ip.clone(),
+                destination: dst_ip.clone(),
+                next_header,
+                payload_length: payload.len(),
+                hop_limit: packet[7],
+            }),
+            ..DecodedLayers::default()
+        },
     };
 
     match next_header {
         6 | 17 | 132 => {
             if payload.len() >= 4 {
-                let src_port = u16::from_be_bytes(payload[0..2].try_into().unwrap());
-                let dst_port = u16::from_be_bytes(payload[2..4].try_into().unwrap());
+                let src_port = u16::from_be_bytes(payload[0..2].try_into().ok()?);
+                let dst_port = u16::from_be_bytes(payload[2..4].try_into().ok()?);
                 analysis.source = format_port(&src_ip, src_port);
                 analysis.destination = format_port(&dst_ip, dst_port);
+                if next_header == 6 {
+                    analysis.layers.tcp = Some(TcpHeader {
+                        source_port: src_port,
+                        destination_port: dst_port,
+                    });
+                } else if next_header == 17 {
+                    let udp_len = if payload.len() >= 6 {
+                        u16::from_be_bytes(payload[4..6].try_into().ok().unwrap_or([0, 0]))
+                    } else {
+                        0
+                    };
+                    analysis.layers.udp = Some(UdpHeader {
+                        source_port: src_port,
+                        destination_port: dst_port,
+                        length: udp_len,
+                    });
+                }
                 analysis.summary = format!(
                     "{protocol_name} {} {ARROW} {}",
                     analysis.source, analysis.destination
@@ -491,12 +645,19 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 let icmp_type = payload[0];
                 let icmp_code = payload[1];
                 let description = describe_icmpv6(icmp_type, icmp_code);
+                analysis.layers.icmp = Some(IcmpHeader {
+                    icmp_type,
+                    icmp_code,
+                    description: description.clone(),
+                    version: "ICMPv6".to_string(),
+                });
                 analysis.summary = format!("ICMPv6 {src_ip} {ARROW} {dst_ip} ({description})");
             }
         }
         _ => {}
     }
 
+    analysis.summary = build_summary_from_layers(&analysis.layers, analysis.summary);
     Some(analysis)
 }
 
@@ -552,6 +713,7 @@ fn parse_arp_packet(packet: &[u8], src_mac: &str, dst_mac: &str) -> Option<Packe
                 dst_mac.to_string()
             }
         ),
+        layers: DecodedLayers::default(),
     })
 }
 
@@ -641,6 +803,7 @@ fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
             protocol: "RAW".to_string(),
             summary,
             length: data.len(),
+            layers: None,
         },
         data,
     );
@@ -690,6 +853,7 @@ fn process_pcap(data: &[u8]) -> Result<PacketProcessingResult, String> {
             protocol: analysis.protocol,
             summary: analysis.summary,
             length: cap_len,
+            layers: Some(analysis.layers),
         };
         packets.push(create_packet(metadata, payload));
         index += 1;
@@ -742,6 +906,7 @@ fn process_pcapng(data: &[u8]) -> Result<PacketProcessingResult, String> {
                         protocol: analysis.protocol,
                         summary: analysis.summary,
                         length: payload.len(),
+                        layers: Some(analysis.layers),
                     };
                     packets.push(create_packet(metadata, payload));
                 }
@@ -770,6 +935,7 @@ fn process_pcapng(data: &[u8]) -> Result<PacketProcessingResult, String> {
                         protocol: analysis.protocol,
                         summary: analysis.summary,
                         length: payload.len(),
+                        layers: Some(analysis.layers),
                     };
                     packets.push(create_packet(metadata, payload));
                 }

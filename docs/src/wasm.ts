@@ -8,6 +8,15 @@ export interface PacketRecord extends FilterPacketRecord {
   length: number;
   info: string;
   payload: Uint8Array;
+  layers?: DecodedLayers;
+}
+export interface DecodedLayers {
+  ethernet?: { source_mac: string; destination_mac: string; ethertype: number };
+  ipv4?: { source: string; destination: string; protocol: number };
+  ipv6?: { source: string; destination: string; next_header: number };
+  tcp?: { source_port: number; destination_port: number };
+  udp?: { source_port: number; destination_port: number; length: number };
+  icmp?: { icmp_type: number; icmp_code: number; description: string; version: string };
 }
 
 export interface PacketProcessingResult {
@@ -164,11 +173,33 @@ const createFallbackResult = (
         length: bytes.length,
         info: summary,
         payload: bytes.slice(),
+        layers: undefined,
       },
     ],
     warnings: [],
     errors: [],
   };
+};
+
+const infoFromLayers = (layers: unknown, fallback: string): string => {
+  if (!layers || typeof layers !== "object") return fallback;
+  const typed = layers as DecodedLayers;
+  if (typed.icmp && (typed.ipv4 || typed.ipv6)) {
+    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
+    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
+    return `${typed.icmp.version} ${src} → ${dst} (${typed.icmp.description})`;
+  }
+  if (typed.tcp && (typed.ipv4 || typed.ipv6)) {
+    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
+    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
+    return `TCP ${src}:${typed.tcp.source_port} → ${dst}:${typed.tcp.destination_port}`;
+  }
+  if (typed.udp && (typed.ipv4 || typed.ipv6)) {
+    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
+    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
+    return `UDP ${src}:${typed.udp.source_port} → ${dst}:${typed.udp.destination_port}`;
+  }
+  return fallback;
 };
 
 const parseProcessingResult = (
@@ -200,8 +231,13 @@ const parseProcessingResult = (
 
             const record = packet as Record<string, unknown>;
             const payload = decodePayload(record.payload, bytes);
+            const layers =
+              typeof record.layers === "object" && record.layers !== null
+                ? (record.layers as DecodedLayers)
+                : undefined;
             const fallbackLength =
               payload.length > 0 ? payload.length : bytes.length;
+            const fallbackInfo = toStringOrFallback(record.info, "—");
 
             return {
               time: toStringOrFallback(record.time, "0.000000"),
@@ -214,8 +250,9 @@ const parseProcessingResult = (
                   toFiniteNumberOrFallback(record.length, fallbackLength),
                 ),
               ),
-              info: toStringOrFallback(record.info, "—"),
+              info: infoFromLayers(layers, fallbackInfo),
               payload,
+              layers,
             };
           })
           .filter((packet): packet is PacketRecord => packet !== null)
