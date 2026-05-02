@@ -8,6 +8,16 @@ use pcap_parser::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+mod core_format;
+mod decode;
+mod models;
+mod pcap;
+mod pcapng;
+mod preview;
+
+use crate::core_format::{CaptureFormat, detect_format};
+use crate::decode::build_summary_from_layers;
+use crate::preview::{build_ascii_preview, build_hex_preview};
 
 const EM_DASH: &str = "—";
 const ARROW: &str = "\u{2192}";
@@ -138,138 +148,14 @@ struct PacketAnalysis {
     summary: String,
 }
 
-fn build_summary_from_layers(layers: &DecodedLayers, default: String) -> String {
-    if let Some(icmp) = &layers.icmp {
-        if let Some(ipv4) = &layers.ipv4 {
-            return format!(
-                "{} {} {ARROW} {} ({})",
-                icmp.version, ipv4.source, ipv4.destination, icmp.description
-            );
-        }
-        if let Some(ipv6) = &layers.ipv6 {
-            return format!(
-                "{} {} {ARROW} {} ({})",
-                icmp.version, ipv6.source, ipv6.destination, icmp.description
-            );
-        }
-    }
-    default
-}
+use crate::pcap::parse_pcap_header;
 
-#[derive(Clone, Copy)]
-enum CaptureFormat {
-    Raw,
-    Pcap,
-    PcapNg,
-}
-
-#[derive(Clone, Copy)]
-enum Endianness {
-    Little,
-    Big,
-}
-
-impl Endianness {
-    fn read_u32(self, bytes: &[u8]) -> u32 {
-        let array: [u8; 4] = bytes[..4].try_into().unwrap();
-        match self {
-            Endianness::Little => u32::from_le_bytes(array),
-            Endianness::Big => u32::from_be_bytes(array),
-        }
-    }
-
-    fn read_i32(self, bytes: &[u8]) -> i32 {
-        let array: [u8; 4] = bytes[..4].try_into().unwrap();
-        match self {
-            Endianness::Little => i32::from_le_bytes(array),
-            Endianness::Big => i32::from_be_bytes(array),
-        }
-    }
-}
-
-struct PcapHeaderInfo {
-    endianness: Endianness,
-    resolution: u64,
-    timezone_offset: i32,
-    linktype: u32,
-    _snaplen: u32,
-}
-
-fn build_hex_preview(bytes: &[u8], max_len: usize) -> String {
-    let preview_len = bytes.len().min(max_len);
-    let mut parts = Vec::with_capacity(preview_len);
-    for byte in bytes.iter().take(preview_len) {
-        parts.push(format!("{:02X}", byte));
-    }
-    let mut preview = parts.join(" ");
-    if bytes.len() > preview_len {
-        preview.push_str(" …");
-    }
-    preview
-}
-
-fn build_ascii_preview(bytes: &[u8], max_len: usize) -> String {
-    let preview_len = bytes.len().min(max_len);
-    let mut preview = String::with_capacity(preview_len);
-    for byte in bytes.iter().take(preview_len) {
-        let ch = *byte;
-        if (0x20..=0x7E).contains(&ch) {
-            preview.push(ch as char);
-        } else {
-            preview.push('.');
-        }
-    }
-    if bytes.len() > preview_len {
-        preview.push('…');
-    }
-    preview
-}
 
 fn serialize_result(result: &PacketProcessingResult) -> String {
     serde_json::to_string(result)
         .unwrap_or_else(|_| "{\"packets\":[],\"warnings\":[],\"errors\":[]}".into())
 }
 
-fn detect_format(data: &[u8]) -> CaptureFormat {
-    if data.len() < 4 {
-        return CaptureFormat::Raw;
-    }
-    if data.starts_with(&[0x0A, 0x0D, 0x0D, 0x0A]) {
-        return CaptureFormat::PcapNg;
-    }
-    let magic = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    match magic {
-        0xA1B2_C3D4 | 0xA1B2_3C4D | 0xD4C3_B2A1 | 0x4D3C_B2A1 => CaptureFormat::Pcap,
-        _ => CaptureFormat::Raw,
-    }
-}
-
-fn parse_pcap_header(data: &[u8]) -> Result<(PcapHeaderInfo, usize), String> {
-    if data.len() < 24 {
-        return Err("PCAP data is too short".to_string());
-    }
-    let magic = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    let (endianness, resolution) = match magic {
-        0xA1B2_C3D4 => (Endianness::Little, 1_000_000),
-        0xA1B2_3C4D => (Endianness::Little, 1_000_000_000),
-        0xD4C3_B2A1 => (Endianness::Big, 1_000_000),
-        0x4D3C_B2A1 => (Endianness::Big, 1_000_000_000),
-        _ => return Err("Unrecognized PCAP header".to_string()),
-    };
-    let thiszone = endianness.read_i32(&data[8..12]);
-    let snaplen = endianness.read_u32(&data[16..20]);
-    let linktype = endianness.read_u32(&data[20..24]);
-    Ok((
-        PcapHeaderInfo {
-            endianness,
-            resolution,
-            timezone_offset: thiszone,
-            linktype,
-            _snaplen: snaplen,
-        },
-        24,
-    ))
-}
 
 fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
     if seconds < 0 {
