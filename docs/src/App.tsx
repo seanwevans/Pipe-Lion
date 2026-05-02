@@ -9,7 +9,6 @@ import {
 } from "./filter";
 import { downloadPacketExport, type PacketExportFormat } from "./exporter";
 import FilterInput, { type FilterChangeDetails } from "./FilterInput";
-import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 import {
   loadFilterText,
@@ -77,17 +76,14 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function toFilterPacketRecord(packet: WasmPacketRecord): FilterPacketRecord {
-  const summaryRecord = parsePacketSummaryLine(packet.info);
-
   return {
-    ...summaryRecord,
-    time: summaryRecord.time ?? packet.time,
-    src: summaryRecord.src ?? packet.source,
-    dst: summaryRecord.dst ?? packet.destination,
-    protocol: summaryRecord.protocol ?? packet.protocol,
-    length: summaryRecord.length ?? packet.length,
-    info: summaryRecord.info ?? packet.info,
-    summary: summaryRecord.summary ?? summaryRecord.info,
+    time: packet.time,
+    source: packet.source,
+    destination: packet.destination,
+    protocol: packet.protocol,
+    length: packet.length,
+    info: packet.info,
+    summary: packet.info,
   };
 }
 
@@ -107,6 +103,8 @@ function App() {
   );
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [processingWarnings, setProcessingWarnings] = useState<string[]>([]);
+  const [processingErrors, setProcessingErrors] = useState<string[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [maxFileSizeMB, setMaxFileSizeMB] = useState(DEFAULT_MAX_FILE_SIZE_MB);
   const [filterText, setFilterText] = useState("");
@@ -136,6 +134,8 @@ function App() {
     setStatus(DEFAULT_STATUS_MESSAGE);
     setError(null);
     setDragActive(false);
+    setProcessingWarnings([]);
+    setProcessingErrors([]);
   }, [abortActiveReader]);
 
   const readFileBytes = useCallback(
@@ -275,13 +275,10 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        if (result.errors.length > 0) {
-          setError(result.errors.join(" \u2022 "));
-        } else if (result.warnings.length > 0) {
-          setError(result.warnings.join(" \u2022 "));
-        } else {
-          setError(null);
-        }
+        setProcessingErrors(Array.isArray(result.errors) ? result.errors : []);
+        setProcessingWarnings(
+          Array.isArray(result.warnings) ? result.warnings : [],
+        );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return;
@@ -294,6 +291,8 @@ function App() {
           return;
         }
         setError("Failed to process the uploaded file.");
+        setProcessingErrors([]);
+        setProcessingWarnings([]);
 
         if (!isMountedRef.current) {
           return;
@@ -537,8 +536,8 @@ function App() {
         const record = toFilterPacketRecord(packet);
         const searchableText = [
           record.time,
-          record.src,
-          record.dst,
+          record.source,
+          record.destination,
           record.protocol,
           record.length,
           record.info,
@@ -626,10 +625,8 @@ function App() {
 
     return [
       `Time: ${displayedPacket.time ?? "—"}`,
-      `Source: ${displayedPacket.source ?? displayedPacket.src ?? "—"}`,
-      `Destination: ${
-        displayedPacket.destination ?? displayedPacket.dst ?? "—"
-      }`,
+      `Source: ${displayedPacket.source ?? "—"}`,
+      `Destination: ${displayedPacket.destination ?? "—"}`,
       `Protocol: ${displayedPacket.protocol ?? "—"}`,
       `Length: ${
         displayedPacket.length !== undefined
@@ -913,6 +910,46 @@ function App() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section
+            className="pane diagnostics"
+            aria-label="Processing diagnostics"
+          >
+            <header>
+              <h2>Diagnostics</h2>
+              <span className="pane-subtitle">Warnings and parse outcomes</span>
+            </header>
+            {processingErrors.length === 0 &&
+            processingWarnings.length === 0 ? (
+              <p>No diagnostics for the latest processed file.</p>
+            ) : (
+              <>
+                {processingErrors.length > 0 && (
+                  <div
+                    className="diagnostics-block diagnostics-errors"
+                    role="alert"
+                  >
+                    <h3>⛔ Fatal parse errors</h3>
+                    <ul>
+                      {processingErrors.map((message, index) => (
+                        <li key={`processing-error-${index}`}>{message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {processingWarnings.length > 0 && (
+                  <div className="diagnostics-block diagnostics-warnings">
+                    <h3>⚠️ Non-fatal warnings</h3>
+                    <ul>
+                      {processingWarnings.map((message, index) => (
+                        <li key={`processing-warning-${index}`}>{message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
           <section className="pane packet-details" aria-label="Packet details">

@@ -109,9 +109,13 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButton = await screen.findByRole("button", {
+    const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
+    const restartButton = restartButtons.find(
+      (button) => !button.hasAttribute("disabled"),
+    );
+    expect(restartButton).toBeDefined();
     await waitFor(() => expect(restartButton).toBeEnabled());
 
     const statusChip = screen.getByRole("status");
@@ -145,6 +149,7 @@ describe("App restart flow", () => {
     );
 
     const errorBanner = await screen.findByRole("alert");
+    expect(errorBanner).toHaveTextContent("Fatal parse errors");
     expect(errorBanner).toHaveTextContent("Processing issue");
     expect(
       screen.queryByText("Drop a capture to populate the packet list."),
@@ -185,9 +190,13 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButton = await screen.findByRole("button", {
+    const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
+    const restartButton = restartButtons.find(
+      (button) => !button.hasAttribute("disabled"),
+    );
+    expect(restartButton).toBeDefined();
     await waitFor(() => expect(restartButton).toBeEnabled());
     const statusChip = screen.getByRole("status");
 
@@ -225,5 +234,99 @@ describe("App restart flow", () => {
     expect(
       screen.getByText("Drop a capture to populate the packet list."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Diagnostics panel", () => {
+  beforeEach(() => {
+    activeReaders.length = 0;
+    processPacketMock.mockReset();
+    loadProcessorMock.mockReset();
+    loadProcessorMock.mockResolvedValue(mockProcessor);
+    globalThis.FileReader =
+      ControlledFileReader as unknown as typeof FileReader;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders warning-only diagnostics without fatal section", async () => {
+    processPacketMock.mockImplementation(() => ({
+      packets: [],
+      warnings: ["Truncated frame data"],
+      errors: [],
+    }));
+
+    render(<App />);
+
+    const fileInput = document.getElementById("file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File([Uint8Array.from([0x01])], "warn.pcap")],
+      },
+    });
+
+    await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+    await activeReaders[0]?.emitLoad();
+
+    expect(
+      await screen.findByText("⚠️ Non-fatal warnings"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Truncated frame data")).toBeInTheDocument();
+    expect(screen.queryByText("⛔ Fatal parse errors")).not.toBeInTheDocument();
+  });
+
+  it("renders error-only diagnostics", async () => {
+    processPacketMock.mockImplementation(() => ({
+      packets: [],
+      warnings: [],
+      errors: ["Unsupported packet format"],
+    }));
+
+    render(<App />);
+
+    const fileInput = document.getElementById("file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File([Uint8Array.from([0x02])], "error.pcap")],
+      },
+    });
+
+    await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+    await activeReaders[0]?.emitLoad();
+
+    expect(
+      await screen.findByText("⛔ Fatal parse errors"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Unsupported packet format")).toBeInTheDocument();
+    expect(screen.queryByText("⚠️ Non-fatal warnings")).not.toBeInTheDocument();
+  });
+
+  it("renders both warnings and errors together", async () => {
+    processPacketMock.mockImplementation(() => ({
+      packets: [],
+      warnings: ["Recovered packet boundary"],
+      errors: ["CRC mismatch"],
+    }));
+
+    render(<App />);
+
+    const fileInput = document.getElementById("file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File([Uint8Array.from([0x03])], "mixed.pcap")],
+      },
+    });
+
+    await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+    await activeReaders[0]?.emitLoad();
+
+    expect(
+      await screen.findByText("⛔ Fatal parse errors"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("CRC mismatch")).toBeInTheDocument();
+    expect(screen.getByText("⚠️ Non-fatal warnings")).toBeInTheDocument();
+    expect(screen.getByText("Recovered packet boundary")).toBeInTheDocument();
   });
 });
