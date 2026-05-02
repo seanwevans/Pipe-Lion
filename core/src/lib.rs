@@ -150,12 +150,10 @@ struct PacketAnalysis {
 
 use crate::pcap::parse_pcap_header;
 
-
 fn serialize_result(result: &PacketProcessingResult) -> String {
     serde_json::to_string(result)
         .unwrap_or_else(|_| "{\"packets\":[],\"warnings\":[],\"errors\":[]}".into())
 }
-
 
 fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
     if seconds < 0 {
