@@ -112,7 +112,9 @@ describe("App restart flow", () => {
     const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
-    const restartButton = restartButtons.find((button) => !button.hasAttribute("disabled"));
+    const restartButton = restartButtons.find(
+      (button) => !button.hasAttribute("disabled"),
+    );
     expect(restartButton).toBeDefined();
     await waitFor(() => expect(restartButton).toBeEnabled());
 
@@ -191,7 +193,9 @@ describe("App restart flow", () => {
     const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
-    const restartButton = restartButtons.find((button) => !button.hasAttribute("disabled"));
+    const restartButton = restartButtons.find(
+      (button) => !button.hasAttribute("disabled"),
+    );
     expect(restartButton).toBeDefined();
     await waitFor(() => expect(restartButton).toBeEnabled());
     const statusChip = screen.getByRole("status");
@@ -233,8 +237,6 @@ describe("App restart flow", () => {
   });
 });
 
-
-
 describe("Diagnostics panel", () => {
   beforeEach(() => {
     activeReaders.length = 0;
@@ -268,7 +270,9 @@ describe("Diagnostics panel", () => {
     await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
     await activeReaders[0]?.emitLoad();
 
-    expect(await screen.findByText("⚠️ Non-fatal warnings")).toBeInTheDocument();
+    expect(
+      await screen.findByText("⚠️ Non-fatal warnings"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Truncated frame data")).toBeInTheDocument();
     expect(screen.queryByText("⛔ Fatal parse errors")).not.toBeInTheDocument();
   });
@@ -292,7 +296,9 @@ describe("Diagnostics panel", () => {
     await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
     await activeReaders[0]?.emitLoad();
 
-    expect(await screen.findByText("⛔ Fatal parse errors")).toBeInTheDocument();
+    expect(
+      await screen.findByText("⛔ Fatal parse errors"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Unsupported packet format")).toBeInTheDocument();
     expect(screen.queryByText("⚠️ Non-fatal warnings")).not.toBeInTheDocument();
   });
@@ -316,7 +322,9 @@ describe("Diagnostics panel", () => {
     await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
     await activeReaders[0]?.emitLoad();
 
-    expect(await screen.findByText("⛔ Fatal parse errors")).toBeInTheDocument();
+    expect(
+      await screen.findByText("⛔ Fatal parse errors"),
+    ).toBeInTheDocument();
     expect(screen.getByText("CRC mismatch")).toBeInTheDocument();
     expect(screen.getByText("⚠️ Non-fatal warnings")).toBeInTheDocument();
     expect(screen.getByText("Recovered packet boundary")).toBeInTheDocument();

@@ -918,17 +918,24 @@ function App() {
             </div>
           </section>
 
-          <section className="pane diagnostics" aria-label="Processing diagnostics">
+          <section
+            className="pane diagnostics"
+            aria-label="Processing diagnostics"
+          >
             <header>
               <h2>Diagnostics</h2>
               <span className="pane-subtitle">Warnings and parse outcomes</span>
             </header>
-            {processingErrors.length === 0 && processingWarnings.length === 0 ? (
+            {processingErrors.length === 0 &&
+            processingWarnings.length === 0 ? (
               <p>No diagnostics for the latest processed file.</p>
             ) : (
               <>
                 {processingErrors.length > 0 && (
-                  <div className="diagnostics-block diagnostics-errors" role="alert">
+                  <div
+                    className="diagnostics-block diagnostics-errors"
+                    role="alert"
+                  >
                     <h3>⛔ Fatal parse errors</h3>
                     <ul>
                       {processingErrors.map((message, index) => (
