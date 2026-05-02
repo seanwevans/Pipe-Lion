@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createStoredList,
-  saveFilterText,
-  saveMaxFileSizeMB,
-} from "./storage";
+import { createStoredList, saveFilterText, saveMaxFileSizeMB } from "./storage";
 
 describe("storage persistence", () => {
   it("returns false when storage is unavailable", () => {
-    const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+    const localStorageDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "localStorage",
+    );
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       get() {
@@ -24,9 +23,11 @@ describe("storage persistence", () => {
   });
 
   it("returns false when writes fail with quota errors", () => {
-    const setSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("quota", "QuotaExceededError");
-    });
+    const setSpy = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      });
 
     expect(saveMaxFileSizeMB(25)).toBe(false);
     expect(saveFilterText("udp")).toBe(false);

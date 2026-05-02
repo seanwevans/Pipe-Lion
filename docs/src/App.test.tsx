@@ -229,12 +229,13 @@ describe("App restart flow", () => {
     ).toBeInTheDocument();
   });
 
-
   it("shows non-blocking feedback when preferences fail to persist", async () => {
     const user = userEvent.setup();
-    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("quota", "QuotaExceededError");
-    });
+    const setItemSpy = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      });
 
     render(<App />);
 
@@ -243,7 +244,9 @@ describe("App restart flow", () => {
     await user.type(maxFileSizeInput, "30");
 
     await waitFor(() => {
-      expect(screen.getByText("Preferences not persisted.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Preferences not persisted."),
+      ).toBeInTheDocument();
     });
 
     setItemSpy.mockRestore();
