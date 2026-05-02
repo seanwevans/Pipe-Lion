@@ -137,18 +137,29 @@ export function loadMaxFileSizeMB(): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function saveMaxFileSizeMB(value: number | null): void {
+export function saveMaxFileSizeMB(value: number | null): boolean {
   const storage = getLocalStorage();
   if (!storage) {
-    return;
+    return false;
   }
 
   if (value === null) {
-    storage.removeItem(MAX_FILE_SIZE_KEY);
-    return;
+    try {
+      storage.removeItem(MAX_FILE_SIZE_KEY);
+      return true;
+    } catch (err) {
+      console.warn("Failed to clear max file size", err);
+      return false;
+    }
   }
 
-  storage.setItem(MAX_FILE_SIZE_KEY, String(value));
+  try {
+    storage.setItem(MAX_FILE_SIZE_KEY, String(value));
+    return true;
+  } catch (err) {
+    console.warn("Failed to persist max file size", err);
+    return false;
+  }
 }
 
 export function loadFilterText(): string | null {
@@ -160,16 +171,27 @@ export function loadFilterText(): string | null {
   return storage.getItem(FILTER_TEXT_KEY);
 }
 
-export function saveFilterText(value: string | null): void {
+export function saveFilterText(value: string | null): boolean {
   const storage = getLocalStorage();
   if (!storage) {
-    return;
+    return false;
   }
 
   if (value === null) {
-    storage.removeItem(FILTER_TEXT_KEY);
-    return;
+    try {
+      storage.removeItem(FILTER_TEXT_KEY);
+      return true;
+    } catch (err) {
+      console.warn("Failed to clear filter text", err);
+      return false;
+    }
   }
 
-  storage.setItem(FILTER_TEXT_KEY, value);
+  try {
+    storage.setItem(FILTER_TEXT_KEY, value);
+    return true;
+  } catch (err) {
+    console.warn("Failed to persist filter text", err);
+    return false;
+  }
 }

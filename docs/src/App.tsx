@@ -112,6 +112,7 @@ function App() {
   const [filterText, setFilterText] = useState("");
   const [filterAst, setFilterAst] = useState<FilterNode | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
+  const [preferencesPersistError, setPreferencesPersistError] = useState(false);
   const [exportFormat, setExportFormat] = useState<PacketExportFormat>("json");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -416,7 +417,8 @@ function App() {
       const clampedValue = clamp(value, MIN_FILE_SIZE_MB, MAX_FILE_SIZE_MB);
       setMaxFileSizeMB(clampedValue);
       if (persist) {
-        saveMaxFileSizeMB(clampedValue);
+        const persisted = saveMaxFileSizeMB(clampedValue);
+        setPreferencesPersistError((prev) => prev || !persisted);
       }
       return clampedValue;
     },
@@ -436,9 +438,11 @@ function App() {
       const trimmed = value.trim();
       if (persist) {
         if (trimmed.length === 0) {
-          saveFilterText(null);
+          const persisted = saveFilterText(null);
+          setPreferencesPersistError((prev) => prev || !persisted);
         } else {
-          saveFilterText(value);
+          const persisted = saveFilterText(value);
+          setPreferencesPersistError((prev) => prev || !persisted);
         }
       }
 
@@ -486,7 +490,8 @@ function App() {
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const rawValue = event.target.value;
       if (rawValue === "") {
-        saveMaxFileSizeMB(null);
+        const persisted = saveMaxFileSizeMB(null);
+        setPreferencesPersistError((prev) => prev || !persisted);
         applyMaxFileSize(DEFAULT_MAX_FILE_SIZE_MB, { persist: false });
         return;
       }
@@ -784,7 +789,9 @@ function App() {
             </div>
           ) : (
             <div className="toolbar-hint">
-              Filter and size preferences are stored in this browser.
+              {preferencesPersistError
+                ? "Preferences not persisted."
+                : "Filter and size preferences are stored in this browser."}
             </div>
           )}
         </div>

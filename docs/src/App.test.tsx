@@ -109,9 +109,10 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButton = await screen.findByRole("button", {
+    const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
+    const restartButton = restartButtons[0];
     await waitFor(() => expect(restartButton).toBeEnabled());
 
     const statusChip = screen.getByRole("status");
@@ -185,9 +186,10 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButton = await screen.findByRole("button", {
+    const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
+    const restartButton = restartButtons[0];
     await waitFor(() => expect(restartButton).toBeEnabled());
     const statusChip = screen.getByRole("status");
 
@@ -225,5 +227,25 @@ describe("App restart flow", () => {
     expect(
       screen.getByText("Drop a capture to populate the packet list."),
     ).toBeInTheDocument();
+  });
+
+
+  it("shows non-blocking feedback when preferences fail to persist", async () => {
+    const user = userEvent.setup();
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+
+    render(<App />);
+
+    const maxFileSizeInput = await screen.findByLabelText("Max file size (MB)");
+    await user.clear(maxFileSizeInput);
+    await user.type(maxFileSizeInput, "30");
+
+    await waitFor(() => {
+      expect(screen.getByText("Preferences not persisted.")).toBeInTheDocument();
+    });
+
+    setItemSpy.mockRestore();
   });
 });
