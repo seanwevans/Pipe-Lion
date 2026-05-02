@@ -20,6 +20,12 @@ Wireshark, Pipelion, nevermind... I'll see myself out.
   ```
 - Node.js (>= 18) and npm for the web UI dependencies
 
+### Tooling policy
+
+- Frontend dependencies under `docs/` are managed with **npm only**.
+- Commit and maintain `docs/package-lock.json`.
+- Do **not** add `pnpm-lock.yaml` (or any other frontend lockfile) to avoid split dependency resolution.
+
 ---
 
 ## Build the WebAssembly Core
@@ -41,7 +47,7 @@ Install the frontend dependencies and start the development server:
 
 ```bash
 cd docs
-npm install
+npm ci
 npm run dev
 ```
 
