@@ -9,7 +9,6 @@ import {
 } from "./filter";
 import { downloadPacketExport, type PacketExportFormat } from "./exporter";
 import FilterInput, { type FilterChangeDetails } from "./FilterInput";
-import { parsePacketSummaryLine } from "./summary";
 import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
 import {
   loadFilterText,
@@ -77,17 +76,14 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function toFilterPacketRecord(packet: WasmPacketRecord): FilterPacketRecord {
-  const summaryRecord = parsePacketSummaryLine(packet.info);
-
   return {
-    ...summaryRecord,
-    time: summaryRecord.time ?? packet.time,
-    src: summaryRecord.src ?? packet.source,
-    dst: summaryRecord.dst ?? packet.destination,
-    protocol: summaryRecord.protocol ?? packet.protocol,
-    length: summaryRecord.length ?? packet.length,
-    info: summaryRecord.info ?? packet.info,
-    summary: summaryRecord.summary ?? summaryRecord.info,
+    time: packet.time,
+    source: packet.source,
+    destination: packet.destination,
+    protocol: packet.protocol,
+    length: packet.length,
+    info: packet.info,
+    summary: packet.info,
   };
 }
 
@@ -537,8 +533,8 @@ function App() {
         const record = toFilterPacketRecord(packet);
         const searchableText = [
           record.time,
-          record.src,
-          record.dst,
+          record.source,
+          record.destination,
           record.protocol,
           record.length,
           record.info,
@@ -626,10 +622,8 @@ function App() {
 
     return [
       `Time: ${displayedPacket.time ?? "—"}`,
-      `Source: ${displayedPacket.source ?? displayedPacket.src ?? "—"}`,
-      `Destination: ${
-        displayedPacket.destination ?? displayedPacket.dst ?? "—"
-      }`,
+      `Source: ${displayedPacket.source ?? "—"}`,
+      `Destination: ${displayedPacket.destination ?? "—"}`,
       `Protocol: ${displayedPacket.protocol ?? "—"}`,
       `Length: ${
         displayedPacket.length !== undefined
