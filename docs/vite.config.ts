@@ -7,12 +7,19 @@ const repositoryName = repository?.includes("/")
   ? repository.split("/")[1]
   : undefined;
 
+const isUserOrOrgPagesRepository = repositoryName?.endsWith(".github.io");
+const basePath = repositoryName
+  ? isUserOrOrgPagesRepository
+    ? "/"
+    : `/${repositoryName}/`
+  : "/";
+
 type ViteWithVitestConfig = UserConfig & {
   test?: VitestUserConfig["test"];
 };
 
 const config: ViteWithVitestConfig = {
-  base: repositoryName ? `/${repositoryName}/` : "/",
+  base: basePath,
   plugins: [react()],
   test: {
     environment: "node",
