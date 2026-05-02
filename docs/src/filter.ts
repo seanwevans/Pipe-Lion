@@ -1,8 +1,6 @@
 export type PacketRecord = {
   time?: string;
-  src?: string;
   source?: string;
-  dst?: string;
   destination?: string;
   protocol?: string;
   length?: string | number;
@@ -10,6 +8,11 @@ export type PacketRecord = {
   summary?: string;
   payload?: Uint8Array;
   [key: string]: string | number | Uint8Array | undefined;
+};
+
+export type LegacyPacketAddressAliases = {
+  src?: string;
+  dst?: string;
 };
 
 export type FilterNode =
@@ -488,9 +491,15 @@ function resolveFieldValue(
   packet: PacketRecord,
   field: string,
 ): string | number | undefined {
+  const legacyPacket = packet as PacketRecord & LegacyPacketAddressAliases;
   const candidates = FIELD_ALIASES[field] ?? [field];
   for (const candidate of candidates) {
-    const value = packet[candidate];
+    const value =
+      candidate === "src"
+        ? legacyPacket.src
+        : candidate === "dst"
+          ? legacyPacket.dst
+          : packet[candidate];
     if (value === undefined) {
       continue;
     }
