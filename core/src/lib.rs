@@ -872,3 +872,86 @@ pub fn process_packet(data: &[u8]) -> String {
     };
     serialize_result(&result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_icmpv4_summary() {
+        let layers = DecodedLayers {
+            ipv4: Some(Ipv4Header {
+                source: "192.168.1.10".to_string(),
+                destination: "192.168.1.1".to_string(),
+                protocol: 1,
+                header_length: 20,
+                total_length: 84,
+                ttl: 64,
+            }),
+            icmp: Some(IcmpHeader {
+                icmp_type: 8,
+                icmp_code: 0,
+                description: "Echo Request".to_string(),
+                version: "ICMP".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "fallback".to_string());
+        assert_eq!(summary, "ICMP 192.168.1.10 → 192.168.1.1 (Echo Request)");
+    }
+
+    #[test]
+    fn builds_icmpv6_summary() {
+        let layers = DecodedLayers {
+            ipv6: Some(Ipv6Header {
+                source: "2001:db8::1".to_string(),
+                destination: "2001:db8::2".to_string(),
+                next_header: 58,
+                payload_length: 32,
+                hop_limit: 64,
+            }),
+            icmp: Some(IcmpHeader {
+                icmp_type: 128,
+                icmp_code: 0,
+                description: "Echo Request".to_string(),
+                version: "ICMPv6".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "fallback".to_string());
+        assert_eq!(summary, "ICMPv6 2001:db8::1 → 2001:db8::2 (Echo Request)");
+    }
+
+    #[test]
+    fn uses_fallback_when_required_layer_missing() {
+        let layers = DecodedLayers {
+            icmp: Some(IcmpHeader {
+                icmp_type: 3,
+                icmp_code: 1,
+                description: "Host Unreachable".to_string(),
+                version: "ICMP".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "default summary".to_string());
+        assert_eq!(summary, "default summary");
+    }
+
+    #[test]
+    fn uses_fallback_for_unsupported_protocol() {
+        let layers = DecodedLayers {
+            ethernet: Some(EthernetHeader {
+                source_mac: "00:11:22:33:44:55".to_string(),
+                destination_mac: "66:77:88:99:aa:bb".to_string(),
+                ethertype: 0x86DD,
+            }),
+            ..Default::default()
+        };
+
+        let summary = build_summary_from_layers(&layers, "unsupported".to_string());
+        assert_eq!(summary, "unsupported");
+    }
+}
