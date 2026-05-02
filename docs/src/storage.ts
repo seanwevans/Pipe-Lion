@@ -16,6 +16,48 @@ function getLocalStorage(): StorageLike | null {
   }
 }
 
+function safeGet(key: string): string | null {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    return storage.getItem(key);
+  } catch (err) {
+    console.warn(`Failed to read stored value for ${key}`, err);
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): boolean {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return false;
+  }
+
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function safeRemove(key: string): boolean {
+  const storage = getLocalStorage();
+  if (!storage) {
+    return false;
+  }
+
+  try {
+    storage.removeItem(key);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 type StoredList = {
   load: () => string[];
   remember: (value: string) => string[];
@@ -42,15 +84,10 @@ function sanitizeValues(values: unknown, limit: number): string[] {
 }
 
 export function createStoredList(key: string, limit: number): StoredList {
-  const storage = getLocalStorage();
   let memoryList: string[] = [];
 
   function load(): string[] {
-    if (!storage) {
-      return [...memoryList.slice(0, Math.max(0, limit))];
-    }
-
-    const raw = storage.getItem(key);
+    const raw = safeGet(key);
     if (raw === null) {
       memoryList = [];
       return [];
@@ -64,13 +101,8 @@ export function createStoredList(key: string, limit: number): StoredList {
     } catch (err) {
       console.warn("Failed to parse stored list", err);
       memoryList = [];
-      try {
-        storage.removeItem(key);
-      } catch (removeErr) {
-        console.warn(
-          "Failed to reset stored list after parse error",
-          removeErr,
-        );
+      if (!safeRemove(key)) {
+        console.warn("Failed to reset stored list after parse error", err);
       }
       return [];
     }
@@ -79,15 +111,8 @@ export function createStoredList(key: string, limit: number): StoredList {
   function remember(value: string): string[] {
     if (limit <= 0) {
       memoryList = [];
-      if (storage) {
-        try {
-          storage.removeItem(key);
-        } catch (err) {
-          console.warn(
-            "Failed to clear stored list with non-positive limit",
-            err,
-          );
-        }
+      if (!safeRemove(key)) {
+        console.warn("Failed to clear stored list with non-positive limit");
       }
       return [];
     }
@@ -97,12 +122,8 @@ export function createStoredList(key: string, limit: number): StoredList {
     const updated = [value, ...deduped].slice(0, limit);
 
     memoryList = updated;
-    if (storage) {
-      try {
-        storage.setItem(key, JSON.stringify(updated));
-      } catch (err) {
-        console.warn("Failed to persist stored list", err);
-      }
+    if (!safeSet(key, JSON.stringify(updated))) {
+      console.warn("Failed to persist stored list");
     }
 
     return [...updated];
@@ -110,12 +131,8 @@ export function createStoredList(key: string, limit: number): StoredList {
 
   function clear(): void {
     memoryList = [];
-    if (storage) {
-      try {
-        storage.removeItem(key);
-      } catch (err) {
-        console.warn("Failed to clear stored list", err);
-      }
+    if (!safeRemove(key)) {
+      console.warn("Failed to clear stored list");
     }
   }
 
@@ -123,12 +140,7 @@ export function createStoredList(key: string, limit: number): StoredList {
 }
 
 export function loadMaxFileSizeMB(): number | null {
-  const storage = getLocalStorage();
-  if (!storage) {
-    return null;
-  }
-
-  const value = storage.getItem(MAX_FILE_SIZE_KEY);
+  const value = safeGet(MAX_FILE_SIZE_KEY);
   if (value === null) {
     return null;
   }
@@ -138,50 +150,41 @@ export function loadMaxFileSizeMB(): number | null {
 }
 
 export function saveMaxFileSizeMB(value: number | null): boolean {
-  const storage = getLocalStorage();
-  if (!storage) {
-    return false;
-  }
-
-  try {
-    if (value === null) {
-      storage.removeItem(MAX_FILE_SIZE_KEY);
-      return true;
+  if (value === null) {
+    if (!safeRemove(MAX_FILE_SIZE_KEY)) {
+      console.warn("Failed to persist max file size preference");
+      return false;
     }
 
-    storage.setItem(MAX_FILE_SIZE_KEY, String(value));
     return true;
-  } catch (err) {
-    console.warn("Failed to persist max file size preference", err);
+  }
+
+  if (!safeSet(MAX_FILE_SIZE_KEY, String(value))) {
+    console.warn("Failed to persist max file size preference");
     return false;
   }
+
+  return true;
 }
 
 export function loadFilterText(): string | null {
-  const storage = getLocalStorage();
-  if (!storage) {
-    return null;
-  }
-
-  return storage.getItem(FILTER_TEXT_KEY);
+  return safeGet(FILTER_TEXT_KEY);
 }
 
 export function saveFilterText(value: string | null): boolean {
-  const storage = getLocalStorage();
-  if (!storage) {
-    return false;
-  }
-
-  try {
-    if (value === null) {
-      storage.removeItem(FILTER_TEXT_KEY);
-      return true;
+  if (value === null) {
+    if (!safeRemove(FILTER_TEXT_KEY)) {
+      console.warn("Failed to persist filter text preference");
+      return false;
     }
 
-    storage.setItem(FILTER_TEXT_KEY, value);
     return true;
-  } catch (err) {
-    console.warn("Failed to persist filter text preference", err);
+  }
+
+  if (!safeSet(FILTER_TEXT_KEY, value)) {
+    console.warn("Failed to persist filter text preference");
     return false;
   }
+
+  return true;
 }
