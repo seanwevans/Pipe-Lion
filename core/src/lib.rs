@@ -1,13 +1,8 @@
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use pcap_parser::{
-    PcapError, PcapNGSlice, nom,
-    pcapng::{Block, InterfaceDescriptionBlock},
-    traits::PcapNGPacketBlock,
-};
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
 mod core_format;
 mod decode;
 mod models;
@@ -17,145 +12,23 @@ mod preview;
 
 use crate::core_format::{CaptureFormat, detect_format};
 use crate::decode::build_summary_from_layers;
+use crate::models::{
+    DecodedLayers, EthernetHeader, IcmpHeader, Ipv4Header, Ipv6Header, Packet, PacketAnalysis,
+    PacketMetadata, PacketProcessingResult, PacketSummary, TcpHeader, UdpHeader,
+};
+use crate::pcap::process_pcap;
+use crate::pcapng::process_pcapng;
 use crate::preview::{build_ascii_preview, build_hex_preview};
 
-const EM_DASH: &str = "—";
-const ARROW: &str = "\u{2192}";
-
-#[derive(Serialize)]
-struct PacketSummary {
-    info: String,
-    summary: String,
-    time: String,
-    src: String,
-    dst: String,
-    protocol: String,
-    length: usize,
-    hex_preview: String,
-    ascii_preview: String,
-}
-
-#[derive(Serialize)]
-struct Packet {
-    layers: Option<DecodedLayers>,
-    time: String,
-    source: String,
-    destination: String,
-    protocol: String,
-    length: usize,
-    info: String,
-    payload: Vec<u8>,
-}
-
-#[derive(Serialize, Clone)]
-struct EthernetHeader {
-    source_mac: String,
-    destination_mac: String,
-    ethertype: u16,
-}
-
-#[derive(Serialize, Clone)]
-struct Ipv4Header {
-    source: String,
-    destination: String,
-    protocol: u8,
-    header_length: usize,
-    total_length: usize,
-    ttl: u8,
-}
-
-#[derive(Serialize, Clone)]
-struct Ipv6Header {
-    source: String,
-    destination: String,
-    next_header: u8,
-    payload_length: usize,
-    hop_limit: u8,
-}
-
-#[derive(Serialize, Clone)]
-struct TcpHeader {
-    source_port: u16,
-    destination_port: u16,
-}
-
-#[derive(Serialize, Clone)]
-struct UdpHeader {
-    source_port: u16,
-    destination_port: u16,
-    length: u16,
-}
-
-#[derive(Serialize, Clone)]
-struct IcmpHeader {
-    icmp_type: u8,
-    icmp_code: u8,
-    description: String,
-    version: String,
-}
-
-#[derive(Serialize, Clone, Default)]
-struct DecodedLayers {
-    ethernet: Option<EthernetHeader>,
-    ipv4: Option<Ipv4Header>,
-    ipv6: Option<Ipv6Header>,
-    tcp: Option<TcpHeader>,
-    udp: Option<UdpHeader>,
-    icmp: Option<IcmpHeader>,
-}
-
-#[derive(Serialize)]
-struct PacketProcessingResult {
-    packets: Vec<Packet>,
-    warnings: Vec<String>,
-    errors: Vec<String>,
-}
-
-struct PacketMetadata {
-    layers: Option<DecodedLayers>,
-    time: String,
-    source: String,
-    destination: String,
-    protocol: String,
-    summary: String,
-    length: usize,
-}
-
-#[derive(Clone, Copy)]
-struct InterfaceInfo {
-    linktype: u32,
-    ts_offset: u64,
-    ts_resolution: u64,
-}
-
-impl InterfaceInfo {
-    fn from_block(block: &InterfaceDescriptionBlock<'_>) -> InterfaceInfo {
-        let resolution = block.ts_resolution().unwrap_or(1_000_000);
-        InterfaceInfo {
-            linktype: block.linktype.0 as u32,
-            ts_offset: block.ts_offset(),
-            ts_resolution: resolution,
-        }
-    }
-}
-
-#[derive(Default)]
-struct PacketAnalysis {
-    source: String,
-    layers: DecodedLayers,
-    destination: String,
-    protocol: String,
-    summary: String,
-}
-
-use crate::pcap::parse_pcap_header;
+pub(crate) const EM_DASH: &str = "\u{2014}";
+pub(crate) const ARROW: &str = "\u{2192}";
 
 fn serialize_result(result: &PacketProcessingResult) -> String {
     serde_json::to_string(result)
         .unwrap_or_else(|_| "{\"packets\":[],\"warnings\":[],\"errors\":[]}".into())
 }
 
-fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
+pub(crate) fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
     if seconds < 0 {
         return "0.000000".to_string();
     }
@@ -174,7 +47,7 @@ fn decimal_digits(resolution: u64) -> Option<usize> {
     let mut value = resolution;
     let mut digits = 0usize;
     while value > 1 {
-        if value % 10 != 0 {
+        if !value.is_multiple_of(10) {
             return None;
         }
         value /= 10;
@@ -183,7 +56,7 @@ fn decimal_digits(resolution: u64) -> Option<usize> {
     Some(digits)
 }
 
-fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
+pub(crate) fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
     let PacketMetadata {
         time,
         source,
@@ -221,7 +94,7 @@ fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
     }
 }
 
-fn analyze_payload(linktype: u32, payload: &[u8]) -> PacketAnalysis {
+pub(crate) fn analyze_payload(linktype: u32, payload: &[u8]) -> PacketAnalysis {
     match linktype {
         1 => analyze_ethernet_frame(payload),
         0 => analyze_null_loopback(payload)
@@ -659,13 +532,6 @@ fn format_mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
-fn describe_nom_error(err: nom::Err<PcapError<&[u8]>>) -> String {
-    match err {
-        nom::Err::Error(e) | nom::Err::Failure(e) => e.to_string(),
-        nom::Err::Incomplete(_) => "Incomplete PCAPNG data".to_string(),
-    }
-}
-
 fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
     if data.is_empty() {
         return PacketProcessingResult {
@@ -696,147 +562,6 @@ fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
         warnings: Vec::new(),
         errors: Vec::new(),
     }
-}
-
-fn process_pcap(data: &[u8]) -> Result<PacketProcessingResult, String> {
-    let (header, mut offset) = parse_pcap_header(data)?;
-    let mut packets = Vec::new();
-    let mut warnings = Vec::new();
-    let mut index = 0usize;
-    while offset + 16 <= data.len() {
-        let block = &data[offset..offset + 16];
-        offset += 16;
-        let ts_sec = header.endianness.read_u32(&block[0..4]);
-        let ts_frac = header.endianness.read_u32(&block[4..8]) as u64;
-        let cap_len = header.endianness.read_u32(&block[8..12]) as usize;
-        let orig_len = header.endianness.read_u32(&block[12..16]) as usize;
-        if offset + cap_len > data.len() {
-            warnings.push(format!(
-                "Packet {} header exceeds capture length",
-                index + 1
-            ));
-            break;
-        }
-        let payload = &data[offset..offset + cap_len];
-        offset += cap_len;
-        let mut analysis = analyze_payload(header.linktype, payload);
-        if orig_len > cap_len {
-            analysis.summary.push_str(" [truncated]");
-            warnings.push(format!(
-                "Packet {} truncated (captured {} of {} bytes)",
-                index + 1,
-                cap_len,
-                orig_len
-            ));
-        }
-        let timestamp_seconds = ts_sec as i64 + header.timezone_offset as i64;
-        let metadata = PacketMetadata {
-            time: format_timestamp(timestamp_seconds, ts_frac, header.resolution),
-            source: analysis.source,
-            destination: analysis.destination,
-            protocol: analysis.protocol,
-            summary: analysis.summary,
-            length: cap_len,
-            layers: Some(analysis.layers),
-        };
-        packets.push(create_packet(metadata, payload));
-        index += 1;
-    }
-    Ok(PacketProcessingResult {
-        packets,
-        warnings,
-        errors: Vec::new(),
-    })
-}
-
-fn process_pcapng(data: &[u8]) -> Result<PacketProcessingResult, String> {
-    let mut slice = PcapNGSlice::from_slice(data).map_err(describe_nom_error)?;
-    let mut packets = Vec::new();
-    let mut warnings = Vec::new();
-    let mut interfaces: Vec<InterfaceInfo> = Vec::new();
-    let mut packet_index = 0usize;
-    while let Some(block) = slice.next() {
-        match block {
-            Ok(pcap_parser::PcapBlockOwned::NG(block)) => match block {
-                Block::SectionHeader(_) => {
-                    interfaces.clear();
-                }
-                Block::InterfaceDescription(idb) => {
-                    interfaces.push(InterfaceInfo::from_block(&idb));
-                }
-                Block::EnhancedPacket(epb) => {
-                    packet_index += 1;
-                    let Some(info) = interfaces.get(epb.if_id as usize).copied() else {
-                        warnings.push(format!(
-                            "Enhanced packet {} references unknown interface {}",
-                            packet_index, epb.if_id
-                        ));
-                        continue;
-                    };
-                    let payload = epb.packet_data();
-                    let (ts_sec, ts_frac) = epb.decode_ts(info.ts_offset, info.ts_resolution);
-                    let mut analysis = analyze_payload(info.linktype, payload);
-                    if (epb.caplen as usize) < (epb.origlen as usize) {
-                        analysis.summary.push_str(" [truncated]");
-                        warnings.push(format!(
-                            "Packet {} truncated (captured {} of {} bytes)",
-                            packet_index, epb.caplen, epb.origlen
-                        ));
-                    }
-                    let metadata = PacketMetadata {
-                        time: format_timestamp(ts_sec as i64, ts_frac as u64, info.ts_resolution),
-                        source: analysis.source,
-                        destination: analysis.destination,
-                        protocol: analysis.protocol,
-                        summary: analysis.summary,
-                        length: payload.len(),
-                        layers: Some(analysis.layers),
-                    };
-                    packets.push(create_packet(metadata, payload));
-                }
-                Block::SimplePacket(spb) => {
-                    packet_index += 1;
-                    let info = interfaces.get(0).copied().unwrap_or(InterfaceInfo {
-                        linktype: 1,
-                        ts_offset: 0,
-                        ts_resolution: 1_000_000,
-                    });
-                    let payload = spb.packet_data();
-                    let mut analysis = analyze_payload(info.linktype, payload);
-                    if (spb.origlen as usize) > payload.len() {
-                        analysis.summary.push_str(" [truncated]");
-                        warnings.push(format!(
-                            "Packet {} truncated (captured {} of {} bytes)",
-                            packet_index,
-                            payload.len(),
-                            spb.origlen
-                        ));
-                    }
-                    let metadata = PacketMetadata {
-                        time: "0.000000".to_string(),
-                        source: analysis.source,
-                        destination: analysis.destination,
-                        protocol: analysis.protocol,
-                        summary: analysis.summary,
-                        length: payload.len(),
-                        layers: Some(analysis.layers),
-                    };
-                    packets.push(create_packet(metadata, payload));
-                }
-                _ => {}
-            },
-            Ok(_) => {}
-            Err(err) => {
-                warnings.push(describe_nom_error(err));
-                break;
-            }
-        }
-    }
-    Ok(PacketProcessingResult {
-        packets,
-        warnings,
-        errors: Vec::new(),
-    })
 }
 
 #[wasm_bindgen]
