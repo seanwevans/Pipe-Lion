@@ -18,11 +18,14 @@ import {
 import App from "./App";
 import * as storage from "./storage";
 
-const { captureMock, loadProcessorMock, freeMock } = vi.hoisted(() => ({
-  captureMock: vi.fn(),
-  loadProcessorMock: vi.fn(),
-  freeMock: vi.fn(),
-}));
+const { captureMock, loadProcessorMock, freeMock, filterMock } = vi.hoisted(
+  () => ({
+    captureMock: vi.fn(),
+    loadProcessorMock: vi.fn(),
+    freeMock: vi.fn(),
+    filterMock: vi.fn(),
+  }),
+);
 
 type MockPacket = Record<string, unknown> & { payload?: Uint8Array };
 type MockCapture = {
@@ -53,6 +56,20 @@ const mockProcessor = {
         rows.slice(offset, offset + count),
       payload: (index: number) =>
         capture.packets[index]?.payload ?? new Uint8Array(),
+      // Stands in for the core's evaluator: a naive scan of the row, which is
+      // enough to prove App delegates filtering rather than doing it itself.
+      filter: (expression: string) => {
+        filterMock(expression);
+        const needle = expression.trim().toLowerCase();
+        return Uint32Array.from(
+          rows
+            .map((row, index) => ({ row, index }))
+            .filter(({ row }) =>
+              JSON.stringify(row).toLowerCase().includes(needle),
+            )
+            .map(({ index }) => index),
+        );
+      },
       free: freeMock,
     };
   },
@@ -115,8 +132,12 @@ function firstEnabled(buttons: HTMLElement[]): HTMLElement {
 describe("App restart flow", () => {
   beforeEach(() => {
     activeReaders.length = 0;
+    // App restores the filter and size preferences from localStorage on mount,
+    // so tests leak into each other unless it starts empty.
+    globalThis.localStorage?.clear();
     captureMock.mockReset();
     freeMock.mockReset();
+    filterMock.mockReset();
     loadProcessorMock.mockReset();
     loadProcessorMock.mockResolvedValue(mockProcessor);
     globalThis.FileReader =
@@ -207,6 +228,47 @@ describe("App restart flow", () => {
       screen.getByText("Drop a capture to populate the packet list."),
     ).toBeInTheDocument();
     expect(screen.getByText("No packet data loaded.")).toBeInTheDocument();
+  });
+
+  it("delegates display filtering to the core", async () => {
+    const user = userEvent.setup();
+
+    captureMock.mockImplementation(() => ({
+      packets: [
+        {
+          time: "0.000001",
+          source: "1.1.1.1",
+          destination: "2.2.2.2",
+          protocol: "TEST",
+          length: 4,
+          info: "Synthetic packet",
+          payload: Uint8Array.from([0xde, 0xad, 0xbe, 0xef]),
+        },
+      ],
+      warnings: [],
+      errors: [],
+    }));
+
+    render(<App />);
+
+    const fileInput = document.getElementById("file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File([Uint8Array.from([0x01])], "one.pcap")] },
+    });
+
+    await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+    await activeReaders[0]?.emitLoad();
+    await screen.findByText("Synthetic packet");
+
+    await user.type(screen.getByLabelText("Display filter"), "nomatch");
+
+    await waitFor(() =>
+      expect(filterMock).toHaveBeenCalledWith(expect.stringContaining("n")),
+    );
+    expect(
+      (await screen.findAllByText("No packets match the current filter."))
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it("frees the previous capture when the workspace is reset", async () => {
@@ -331,8 +393,12 @@ describe("App restart flow", () => {
 describe("Diagnostics panel", () => {
   beforeEach(() => {
     activeReaders.length = 0;
+    // App restores the filter and size preferences from localStorage on mount,
+    // so tests leak into each other unless it starts empty.
+    globalThis.localStorage?.clear();
     captureMock.mockReset();
     freeMock.mockReset();
+    filterMock.mockReset();
     loadProcessorMock.mockReset();
     loadProcessorMock.mockResolvedValue(mockProcessor);
     globalThis.FileReader =

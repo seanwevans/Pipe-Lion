@@ -90,10 +90,11 @@ hex/ASCII dump of its bytes. Arrow keys move through the list.
 **Display filters.** A Wireshark-flavoured expression language — `&&`/`||`/`!`
 (or `and`/`or`/`not`), parentheses, quoted strings, and `field == value` /
 `field contains value` over `time`, `src`/`source`, `dst`/`destination`,
-`protocol`, `length` and `info`. A bare word matches anywhere in the packet's
-summary. The input offers field completions and keeps recent filters as
-one-click chips, and syntax errors are underlined in place instead of silently
-matching nothing.
+`protocol`, `length` and `info`. A bare word matches anywhere in the row.
+Evaluation runs in the Rust core, over packets already in linear memory, and
+only the matching indices cross back. The input offers field completions and
+keeps recent filters as one-click chips, and syntax errors are underlined in
+place instead of silently matching nothing.
 
 **Export.** The current packet set can be written back out as JSON (with
 base64 payloads) or as a `.pcap` file.
@@ -106,8 +107,9 @@ Your display filter and max-file-size preference persist in `localStorage`.
 
 - The `core` crate is built with `wasm-bindgen` and exports a handle-based
   API: `parse(data) -> CaptureHandle`, then `packet_count`, `warnings`,
-  `errors`, `packets(offset, count)` for a window of rows as JSON, and
-  `payload(index)` for one packet's bytes as a `Uint8Array`. Nothing that
+  `errors`, `packets(offset, count)` for a window of rows as JSON,
+  `payload(index)` for one packet's bytes as a `Uint8Array`, and
+  `filter(expression)` for the indices matching a display filter. Nothing that
   crosses the boundary is proportional to the size of the capture. Call
   `free()` when finished — the capture is not garbage collected.
 - `cargo test --manifest-path core/Cargo.toml` covers the parsers and

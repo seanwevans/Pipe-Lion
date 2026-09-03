@@ -6,6 +6,7 @@ mod capture;
 mod core_format;
 mod decode;
 mod dns;
+mod filter;
 mod models;
 mod pcap;
 mod pcapng;

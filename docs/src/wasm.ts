@@ -84,6 +84,9 @@ export interface CaptureSession {
   readonly errors: string[];
   packets: (offset: number, count: number) => PacketRecord[];
   payload: (index: number) => Uint8Array;
+  /// Indices of the packets matching a display filter, in capture order.
+  /// Throws with the parser's message if the expression is malformed.
+  filter: (expression: string) => Uint32Array;
   free: () => void;
 }
 
@@ -98,6 +101,7 @@ type WasmCaptureHandle = {
   readonly errors: string[];
   packets: (offset: number, count: number) => string;
   payload: (index: number) => Uint8Array | undefined;
+  filter: (expression: string) => Uint32Array;
   free: () => void;
 };
 
@@ -239,6 +243,7 @@ const toSession = (handle: WasmCaptureHandle): CaptureSession => ({
   packets: (offset: number, count: number) =>
     count <= 0 ? [] : parsePacketRows(handle.packets(offset, count), offset),
   payload: (index: number) => handle.payload(index) ?? new Uint8Array(),
+  filter: (expression: string) => handle.filter(expression),
   free: () => handle.free(),
 });
 

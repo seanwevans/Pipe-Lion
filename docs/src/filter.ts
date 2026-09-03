@@ -1,3 +1,5 @@
+/// The row shape the filter grammar names fields against. Evaluation itself
+/// happens in the Rust core — see `core/src/filter.rs`.
 export type PacketRecord = {
   time?: string;
   source?: string;
@@ -6,7 +8,6 @@ export type PacketRecord = {
   length?: string | number;
   info: string;
   summary?: string;
-  payload?: Uint8Array;
   [key: string]: unknown;
 };
 
@@ -481,75 +482,3 @@ export const FIELD_ALIASES: Record<string, string[]> = {
   info: ["info", "summary"],
   summary: ["summary", "info"],
 };
-
-function resolveFieldValue(
-  packet: PacketRecord,
-  field: string,
-): string | number | undefined {
-  const candidates = FIELD_ALIASES[field] ?? [field];
-  for (const candidate of candidates) {
-    const value = packet[candidate];
-    if (value === undefined) {
-      continue;
-    }
-    if (typeof value === "string" || typeof value === "number") {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-export function evaluateFilter(
-  node: FilterNode,
-  packet: PacketRecord,
-  searchableText?: string,
-): boolean {
-  switch (node.type) {
-    case "text": {
-      const infoMatch = packet.info.toLowerCase().includes(node.value);
-      if (infoMatch) {
-        return true;
-      }
-
-      if (typeof packet.summary === "string") {
-        return packet.summary.toLowerCase().includes(node.value);
-      }
-
-      if (typeof searchableText === "string") {
-        return searchableText.includes(node.value);
-      }
-
-      return false;
-    }
-
-    case "comparison": {
-      const value = resolveFieldValue(packet, node.field);
-      if (value === undefined) {
-        return false;
-      }
-      const haystack = String(value).toLowerCase();
-      const needle = node.value.toLowerCase();
-      if (node.operator === "eq") {
-        return haystack === needle;
-      }
-      if (node.operator === "contains") {
-        return haystack.includes(needle);
-      }
-      return false;
-    }
-    case "and":
-      return (
-        evaluateFilter(node.left, packet, searchableText) &&
-        evaluateFilter(node.right, packet, searchableText)
-      );
-    case "or":
-      return (
-        evaluateFilter(node.left, packet, searchableText) ||
-        evaluateFilter(node.right, packet, searchableText)
-      );
-    case "not":
-      return !evaluateFilter(node.operand, packet, searchableText);
-    default:
-      return true;
-  }
-}
