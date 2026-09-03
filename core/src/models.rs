@@ -1,3 +1,5 @@
+//! Shared, serializable packet model types produced by the parsers.
+
 use serde::Serialize;
 
 #[derive(Serialize)]

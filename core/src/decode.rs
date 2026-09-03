@@ -1,4 +1,4 @@
-use crate::DecodedLayers;
+use crate::models::DecodedLayers;
 
 const ARROW: &str = "\u{2192}";
 
@@ -23,7 +23,7 @@ pub fn build_summary_from_layers(layers: &DecodedLayers, default: String) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DecodedLayers, IcmpHeader, Ipv4Header};
+    use crate::models::{DecodedLayers, IcmpHeader, Ipv4Header};
     #[test]
     fn icmp_summary_overrides_default() {
         let s = build_summary_from_layers(
