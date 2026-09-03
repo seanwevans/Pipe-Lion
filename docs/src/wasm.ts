@@ -1,20 +1,67 @@
 import type { PacketRecord as FilterPacketRecord } from "./filter";
 
+/// One row of the packet list. Payload bytes are deliberately absent: fetch
+/// them a packet at a time with `CaptureSession.payload`.
 export interface PacketRecord extends FilterPacketRecord {
+  index: number;
   time: string;
   source: string;
   destination: string;
   protocol: string;
   length: number;
   info: string;
-  payload: Uint8Array;
+  hex_preview: string;
+  ascii_preview: string;
+  payload_length: number;
   layers?: DecodedLayers;
 }
+
+/// A row with its bytes attached, for consumers that need them (the exporters).
+export interface PacketWithPayload extends PacketRecord {
+  payload: Uint8Array;
+}
+
+export interface DnsQuestion {
+  name: string;
+  qtype: string;
+  qclass: string;
+}
+
+export interface DnsLayer {
+  id: number;
+  is_response: boolean;
+  truncated: boolean;
+  opcode: string;
+  rcode: string;
+  question_count: number;
+  answer_count: number;
+  authority_count: number;
+  additional_count: number;
+  questions: DnsQuestion[];
+}
+
+export interface TlsClientHello {
+  version: string;
+  server_name: string | null;
+  alpn: string[];
+}
+
+export interface TlsLayer {
+  content_type: string;
+  version: string;
+  handshake_type: string | null;
+  client_hello: TlsClientHello | null;
+}
+
 export interface DecodedLayers {
   ethernet?: { source_mac: string; destination_mac: string; ethertype: number };
   ipv4?: { source: string; destination: string; protocol: number };
   ipv6?: { source: string; destination: string; next_header: number };
-  tcp?: { source_port: number; destination_port: number };
+  tcp?: {
+    source_port: number;
+    destination_port: number;
+    header_length: number;
+  };
   udp?: { source_port: number; destination_port: number; length: number };
   icmp?: {
     icmp_type: number;
@@ -22,16 +69,36 @@ export interface DecodedLayers {
     description: string;
     version: string;
   };
+  dns?: DnsLayer;
+  tls?: TlsLayer;
 }
 
-export interface PacketProcessingResult {
-  packets: PacketRecord[];
-  warnings: string[];
-  errors: string[];
+/// A parsed capture living in Wasm linear memory.
+///
+/// Rows cross the boundary a window at a time and payloads one packet at a
+/// time, so nothing here is proportional to the size of the capture. Call
+/// `free()` when finished — the bytes are not garbage collected.
+export interface CaptureSession {
+  readonly packetCount: number;
+  readonly warnings: string[];
+  readonly errors: string[];
+  packets: (offset: number, count: number) => PacketRecord[];
+  payload: (index: number) => Uint8Array;
+  free: () => void;
 }
 
 export type PacketProcessor = {
-  process_packet: (data: Uint8Array) => PacketProcessingResult;
+  parse: (data: Uint8Array) => CaptureSession;
+};
+
+/// The shape wasm-bindgen generates for `CaptureHandle`.
+type WasmCaptureHandle = {
+  readonly packet_count: number;
+  readonly warnings: string[];
+  readonly errors: string[];
+  packets: (offset: number, count: number) => string;
+  payload: (index: number) => Uint8Array | undefined;
+  free: () => void;
 };
 
 let cachedProcessor: PacketProcessor | null = null;
@@ -102,178 +169,78 @@ const toFiniteNumberOrFallback = (value: unknown, fallback: number): number => {
   return fallback;
 };
 
-const decodePayload = (value: unknown, fallback: Uint8Array): Uint8Array => {
-  if (value instanceof Uint8Array) {
-    return value.slice();
+const toLayers = (value: unknown): DecodedLayers | undefined =>
+  typeof value === "object" && value !== null
+    ? (value as DecodedLayers)
+    : undefined;
+
+const toRecord = (
+  value: unknown,
+  fallbackIndex: number,
+): PacketRecord | null => {
+  if (typeof value !== "object" || value === null) {
+    return null;
   }
 
-  if (Array.isArray(value)) {
-    const bytes = value
-      .map((item) =>
-        typeof item === "number" && Number.isInteger(item)
-          ? ((item % 256) + 256) % 256
-          : null,
-      )
-      .filter((item): item is number => item !== null);
-    return Uint8Array.from(bytes);
-  }
-
-  if (typeof value === "string" && value.length > 0) {
-    try {
-      if (typeof globalThis.atob === "function") {
-        const binary = globalThis.atob(value);
-        const output = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index += 1) {
-          output[index] = binary.charCodeAt(index) & 0xff;
-        }
-        return output;
-      }
-
-      const bufferCtor = (
-        globalThis as {
-          Buffer?: {
-            from: (input: string, encoding: string) => Uint8Array | number[];
-          };
-        }
-      ).Buffer;
-      if (bufferCtor) {
-        const bufferValue = bufferCtor.from(value, "base64");
-        return bufferValue instanceof Uint8Array
-          ? bufferValue
-          : new Uint8Array(bufferValue);
-      }
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.debug("[wasm] Failed to decode base64 payload", error);
-      }
-    }
-  }
-
-  return fallback.slice();
-};
-
-const createFallbackResult = (
-  summary: string,
-  bytes: Uint8Array,
-): PacketProcessingResult => {
-  if (import.meta.env.DEV) {
-    console.debug("[wasm] Using fallback packet processing result");
-  }
-
-  if (bytes.length === 0) {
-    return {
-      packets: [],
-      warnings: [],
-      errors: [],
-    };
-  }
+  const row = value as Record<string, unknown>;
+  const length = Math.max(
+    0,
+    Math.round(toFiniteNumberOrFallback(row.length, 0)),
+  );
 
   return {
-    packets: [
-      {
-        time: "0.000000",
-        source: "—",
-        destination: "—",
-        protocol: "RAW",
-        length: bytes.length,
-        info: summary,
-        payload: bytes.slice(),
-        layers: undefined,
-      },
-    ],
-    warnings: [],
-    errors: [],
+    index: Math.max(
+      0,
+      Math.round(toFiniteNumberOrFallback(row.index, fallbackIndex)),
+    ),
+    time: toStringOrFallback(row.time, "0.000000"),
+    source: toStringOrFallback(row.source, "—"),
+    destination: toStringOrFallback(row.destination, "—"),
+    protocol: toStringOrFallback(row.protocol, "—"),
+    length,
+    info: toStringOrFallback(row.info, "—"),
+    hex_preview: toStringOrFallback(row.hex_preview, ""),
+    ascii_preview: toStringOrFallback(row.ascii_preview, ""),
+    payload_length: Math.max(
+      0,
+      Math.round(toFiniteNumberOrFallback(row.payload_length, length)),
+    ),
+    layers: toLayers(row.layers),
   };
 };
 
-const infoFromLayers = (layers: unknown, fallback: string): string => {
-  if (!layers || typeof layers !== "object") return fallback;
-  const typed = layers as DecodedLayers;
-  if (typed.icmp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `${typed.icmp.version} ${src} → ${dst} (${typed.icmp.description})`;
-  }
-  if (typed.tcp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `TCP ${src}:${typed.tcp.source_port} → ${dst}:${typed.tcp.destination_port}`;
-  }
-  if (typed.udp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `UDP ${src}:${typed.udp.source_port} → ${dst}:${typed.udp.destination_port}`;
-  }
-  return fallback;
-};
-
-const parseProcessingResult = (
-  raw: string,
-  bytes: Uint8Array,
-): PacketProcessingResult => {
+const parsePacketRows = (raw: string, offset: number): PacketRecord[] => {
   try {
-    const parsed = JSON.parse(raw) as {
-      packets?: unknown;
-      warnings?: unknown;
-      errors?: unknown;
-    };
-
-    const errors = Array.isArray(parsed.errors)
-      ? parsed.errors.filter((item): item is string => typeof item === "string")
-      : [];
-    const warnings = Array.isArray(parsed.warnings)
-      ? parsed.warnings.filter(
-          (item): item is string => typeof item === "string",
-        )
-      : [];
-
-    const packets = Array.isArray(parsed.packets)
-      ? parsed.packets
-          .map((packet): PacketRecord | null => {
-            if (typeof packet !== "object" || packet === null) {
-              return null;
-            }
-
-            const record = packet as Record<string, unknown>;
-            const payload = decodePayload(record.payload, bytes);
-            const layers =
-              typeof record.layers === "object" && record.layers !== null
-                ? (record.layers as DecodedLayers)
-                : undefined;
-            const fallbackLength =
-              payload.length > 0 ? payload.length : bytes.length;
-            const fallbackInfo = toStringOrFallback(record.info, "—");
-
-            return {
-              time: toStringOrFallback(record.time, "0.000000"),
-              source: toStringOrFallback(record.source, "—"),
-              destination: toStringOrFallback(record.destination, "—"),
-              protocol: toStringOrFallback(record.protocol, "—"),
-              length: Math.max(
-                0,
-                Math.round(
-                  toFiniteNumberOrFallback(record.length, fallbackLength),
-                ),
-              ),
-              info: infoFromLayers(layers, fallbackInfo),
-              payload,
-              layers,
-            };
-          })
-          .filter((packet): packet is PacketRecord => packet !== null)
-      : [];
-
-    if (packets.length > 0 || warnings.length > 0 || errors.length > 0) {
-      return { packets, warnings, errors };
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
     }
+    return parsed
+      .map((row, position) => toRecord(row, offset + position))
+      .filter((row): row is PacketRecord => row !== null);
   } catch (error) {
     if (import.meta.env.DEV) {
-      console.debug("[wasm] Failed to parse Wasm response", error);
+      console.debug("[wasm] Failed to parse packet window", error);
     }
+    return [];
   }
-
-  return createFallbackResult(raw, bytes);
 };
+
+const toSession = (handle: WasmCaptureHandle): CaptureSession => ({
+  get packetCount() {
+    return handle.packet_count;
+  },
+  get warnings() {
+    return [...handle.warnings];
+  },
+  get errors() {
+    return [...handle.errors];
+  },
+  packets: (offset: number, count: number) =>
+    count <= 0 ? [] : parsePacketRows(handle.packets(offset, count), offset),
+  payload: (index: number) => handle.payload(index) ?? new Uint8Array(),
+  free: () => handle.free(),
+});
 
 export async function loadProcessor(): Promise<PacketProcessor> {
   if (cachedProcessor) {
@@ -285,13 +252,12 @@ export async function loadProcessor(): Promise<PacketProcessor> {
       try {
         const module = (await import(/* @vite-ignore */ wasmModulePath)) as {
           default: InitFn;
-          process_packet: (data: Uint8Array) => string;
+          parse: (data: Uint8Array) => WasmCaptureHandle;
         };
 
         await module.default(wasmBinaryPath);
         cachedProcessor = {
-          process_packet: (data: Uint8Array) =>
-            parseProcessingResult(module.process_packet(data), data),
+          parse: (data: Uint8Array) => toSession(module.parse(data)),
         };
         return cachedProcessor;
       } catch (error) {

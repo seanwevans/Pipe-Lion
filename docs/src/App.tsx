@@ -9,7 +9,12 @@ import {
 } from "./filter";
 import { downloadPacketExport, type PacketExportFormat } from "./exporter";
 import FilterInput, { type FilterChangeDetails } from "./FilterInput";
-import { loadProcessor, type PacketRecord as WasmPacketRecord } from "./wasm";
+import {
+  loadProcessor,
+  type CaptureSession,
+  type PacketRecord as WasmPacketRecord,
+  type PacketWithPayload,
+} from "./wasm";
 import {
   loadFilterText,
   loadMaxFileSizeMB,
@@ -66,6 +71,22 @@ function formatHex(data: Uint8Array, bytesPerRow = 16, maxRows = 32): string {
   return lines.join("\n");
 }
 
+/// Packet rows cross the Wasm boundary a window at a time rather than as one
+/// JSON document for the whole capture.
+const PACKET_PAGE_SIZE = 4096;
+
+/// Drains every window of a capture into rows. Payload bytes stay in Wasm.
+function collectPackets(session: CaptureSession): WasmPacketRecord[] {
+  const rows: WasmPacketRecord[] = [];
+  const total = session.packetCount;
+  for (let offset = 0; offset < total; offset += PACKET_PAGE_SIZE) {
+    for (const row of session.packets(offset, PACKET_PAGE_SIZE)) {
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 const DEFAULT_MAX_FILE_SIZE_MB = 25;
 const MIN_FILE_SIZE_MB = 1;
@@ -117,6 +138,17 @@ function App() {
   const uploadTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const fileReaderRef = useRef<FileReader | null>(null);
+  const sessionRef = useRef<CaptureSession | null>(null);
+  const [selectedPayload, setSelectedPayload] = useState<Uint8Array | null>(
+    null,
+  );
+
+  /// Releases the capture held in Wasm linear memory. Nothing else frees it.
+  const closeSession = useCallback(() => {
+    sessionRef.current?.free();
+    sessionRef.current = null;
+    setSelectedPayload(null);
+  }, []);
 
   const abortActiveReader = useCallback(() => {
     const activeReader = fileReaderRef.current;
@@ -129,6 +161,7 @@ function App() {
   const resetWorkspace = useCallback(() => {
     uploadTokenRef.current += 1;
     abortActiveReader();
+    closeSession();
     processingQueueRef.current = Promise.resolve();
     setPackets([]);
     setSelectedPacketIndex(null);
@@ -137,7 +170,7 @@ function App() {
     setDragActive(false);
     setProcessingWarnings([]);
     setProcessingErrors([]);
-  }, [abortActiveReader]);
+  }, [abortActiveReader, closeSession]);
 
   const readFileBytes = useCallback(
     (file: File) =>
@@ -179,8 +212,9 @@ function App() {
       isMountedRef.current = false;
       uploadTokenRef.current += 1;
       abortActiveReader();
+      closeSession();
     };
-  }, [abortActiveReader]);
+  }, [abortActiveReader, closeSession]);
 
   useEffect(() => {
     loadProcessor()
@@ -247,14 +281,15 @@ function App() {
         if (uploadTokenRef.current !== token) {
           return;
         }
-        const result = processor.process_packet(bytes);
-        const processedPackets = Array.isArray(result.packets)
-          ? result.packets
-          : [];
-
+        const session = processor.parse(bytes);
         if (uploadTokenRef.current !== token) {
+          session.free();
           return;
         }
+        closeSession();
+        sessionRef.current = session;
+        const processedPackets = collectPackets(session);
+
         if (!isMountedRef.current) {
           return;
         }
@@ -276,10 +311,8 @@ function App() {
         if (!isMountedRef.current) {
           return;
         }
-        setProcessingErrors(Array.isArray(result.errors) ? result.errors : []);
-        setProcessingWarnings(
-          Array.isArray(result.warnings) ? result.warnings : [],
-        );
+        setProcessingErrors(session.errors);
+        setProcessingWarnings(session.warnings);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return;
@@ -309,7 +342,7 @@ function App() {
         setSelectedPacketIndex(null);
       }
     },
-    [maxFileSizeMB, readFileBytes],
+    [closeSession, maxFileSizeMB, readFileBytes],
   );
 
   const enqueueFile = useCallback(
@@ -374,8 +407,21 @@ function App() {
       return;
     }
 
+    const session = sessionRef.current;
+    if (!session) {
+      setError("No packets are available to export yet.");
+      return;
+    }
+
     try {
-      const result = downloadPacketExport(packets, { format: exportFormat });
+      // Payloads are pulled from Wasm only at export time, one packet each.
+      const withPayloads: PacketWithPayload[] = packets.map((packet) => ({
+        ...packet,
+        payload: session.payload(packet.index),
+      }));
+      const result = downloadPacketExport(withPayloads, {
+        format: exportFormat,
+      });
       const label = packets.length === 1 ? "packet" : "packets";
       setError((prev) =>
         prev && prev.toLowerCase().includes("export") ? null : prev,
@@ -662,13 +708,30 @@ function App() {
     if (!displayedPacket) {
       return "Select a packet to view its payload.";
     }
-    const payload = displayedPacket.payload;
-    if (!payload || payload.length === 0) {
+    if (displayedPacket.payload_length === 0) {
       return "Packet payload is empty.";
     }
+    if (!selectedPayload) {
+      return "Loading packet bytes…";
+    }
 
-    return formatHex(payload);
-  }, [activeFilter, displayedPacket, hasPacketData, hasVisiblePackets]);
+    return formatHex(selectedPayload);
+  }, [
+    activeFilter,
+    displayedPacket,
+    hasPacketData,
+    hasVisiblePackets,
+    selectedPayload,
+  ]);
+
+  useEffect(() => {
+    const session = sessionRef.current;
+    if (!session || !displayedPacket) {
+      setSelectedPayload(null);
+      return;
+    }
+    setSelectedPayload(session.payload(displayedPacket.index));
+  }, [displayedPacket]);
 
   const showDropOverlay = dragActive || !hasPacketData;
 
@@ -797,7 +860,7 @@ function App() {
           <FilterInput
             id="display-filter"
             label="Display filter"
-            placeholder="tcp && http"
+            placeholder="dns || tls"
             value={filterText}
             describedById={filterError ? "display-filter-error" : undefined}
             onFilterChange={onFilterChange}

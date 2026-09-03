@@ -1,32 +1,28 @@
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use wasm_bindgen::prelude::*;
-
+mod application;
+mod capture;
 mod core_format;
 mod decode;
+mod dns;
 mod models;
 mod pcap;
 mod pcapng;
 mod preview;
+mod tls;
 
-use crate::core_format::{CaptureFormat, detect_format};
 use crate::decode::build_summary_from_layers;
 use crate::models::{
     DecodedLayers, EthernetHeader, IcmpHeader, Ipv4Header, Ipv6Header, Packet, PacketAnalysis,
-    PacketMetadata, PacketProcessingResult, PacketSummary, TcpHeader, UdpHeader,
+    PacketMetadata, PacketProcessingResult, TcpHeader, UdpHeader,
 };
-use crate::pcap::process_pcap;
-use crate::pcapng::process_pcapng;
 use crate::preview::{build_ascii_preview, build_hex_preview};
+
+pub use crate::capture::{CaptureHandle, parse};
 
 pub(crate) const EM_DASH: &str = "\u{2014}";
 pub(crate) const ARROW: &str = "\u{2192}";
-
-fn serialize_result(result: &PacketProcessingResult) -> String {
-    serde_json::to_string(result)
-        .unwrap_or_else(|_| "{\"packets\":[],\"warnings\":[],\"errors\":[]}".into())
-}
 
 pub(crate) fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
     if seconds < 0 {
@@ -67,21 +63,6 @@ pub(crate) fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
         layers,
     } = meta;
 
-    let hex_preview = build_hex_preview(payload, 32);
-    let ascii_preview = build_ascii_preview(payload, 32);
-    let summary_payload = PacketSummary {
-        info: summary.clone(),
-        summary: summary.clone(),
-        time: time.clone(),
-        src: source.clone(),
-        dst: destination.clone(),
-        protocol: protocol.clone(),
-        length,
-        hex_preview,
-        ascii_preview,
-    };
-    let info = serde_json::to_string(&summary_payload).unwrap_or_else(|_| summary.clone());
-
     Packet {
         layers,
         time,
@@ -89,7 +70,9 @@ pub(crate) fn create_packet(meta: PacketMetadata, payload: &[u8]) -> Packet {
         destination,
         protocol,
         length,
-        info,
+        info: summary,
+        hex_preview: build_hex_preview(payload, 32),
+        ascii_preview: build_ascii_preview(payload, 32),
         payload: payload.to_vec(),
     }
 }
@@ -251,26 +234,22 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 let dst_port = u16::from_be_bytes(payload[2..4].try_into().ok()?);
                 analysis.source = format_port(&src_ip, src_port);
                 analysis.destination = format_port(&dst_ip, dst_port);
-                if protocol == 6 {
-                    analysis.layers.tcp = Some(TcpHeader {
-                        source_port: src_port,
-                        destination_port: dst_port,
-                    });
-                } else if protocol == 17 {
-                    let udp_len = if payload.len() >= 6 {
-                        u16::from_be_bytes(payload[4..6].try_into().ok().unwrap_or([0, 0]))
-                    } else {
-                        0
-                    };
-                    analysis.layers.udp = Some(UdpHeader {
-                        source_port: src_port,
-                        destination_port: dst_port,
-                        length: udp_len,
-                    });
+                record_transport(protocol, src_port, dst_port, payload, &mut analysis.layers);
+                let dissection = application::dissect(
+                    protocol,
+                    src_port,
+                    dst_port,
+                    payload,
+                    &mut analysis.layers,
+                );
+                if let Some(dissection) = &dissection {
+                    analysis.protocol = dissection.protocol.to_string();
                 }
-                analysis.summary = format!(
-                    "{protocol_name} {} {ARROW} {}",
-                    analysis.source, analysis.destination
+                analysis.summary = describe_transport(
+                    &analysis.protocol,
+                    &analysis.source,
+                    &analysis.destination,
+                    dissection.as_ref(),
                 );
             }
         }
@@ -374,26 +353,28 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 let dst_port = u16::from_be_bytes(payload[2..4].try_into().ok()?);
                 analysis.source = format_port(&src_ip, src_port);
                 analysis.destination = format_port(&dst_ip, dst_port);
-                if next_header == 6 {
-                    analysis.layers.tcp = Some(TcpHeader {
-                        source_port: src_port,
-                        destination_port: dst_port,
-                    });
-                } else if next_header == 17 {
-                    let udp_len = if payload.len() >= 6 {
-                        u16::from_be_bytes(payload[4..6].try_into().ok().unwrap_or([0, 0]))
-                    } else {
-                        0
-                    };
-                    analysis.layers.udp = Some(UdpHeader {
-                        source_port: src_port,
-                        destination_port: dst_port,
-                        length: udp_len,
-                    });
+                record_transport(
+                    next_header,
+                    src_port,
+                    dst_port,
+                    payload,
+                    &mut analysis.layers,
+                );
+                let dissection = application::dissect(
+                    next_header,
+                    src_port,
+                    dst_port,
+                    payload,
+                    &mut analysis.layers,
+                );
+                if let Some(dissection) = &dissection {
+                    analysis.protocol = dissection.protocol.to_string();
                 }
-                analysis.summary = format!(
-                    "{protocol_name} {} {ARROW} {}",
-                    analysis.source, analysis.destination
+                analysis.summary = describe_transport(
+                    &analysis.protocol,
+                    &analysis.source,
+                    &analysis.destination,
+                    dissection.as_ref(),
                 );
             }
         }
@@ -520,6 +501,54 @@ fn describe_icmpv6(icmp_type: u8, icmp_code: u8) -> String {
     }
 }
 
+/// Records the TCP or UDP layer for a transport segment. SCTP gets ports in the
+/// address columns but has no dedicated layer struct yet.
+fn record_transport(
+    ip_protocol: u8,
+    source_port: u16,
+    destination_port: u16,
+    segment: &[u8],
+    layers: &mut DecodedLayers,
+) {
+    match ip_protocol {
+        6 => {
+            layers.tcp = Some(TcpHeader {
+                source_port,
+                destination_port,
+                header_length: application::tcp_header_length(segment).unwrap_or(0),
+            });
+        }
+        17 => {
+            let length = segment
+                .get(4..6)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u16::from_be_bytes)
+                .unwrap_or(0);
+            layers.udp = Some(UdpHeader {
+                source_port,
+                destination_port,
+                length,
+            });
+        }
+        _ => {}
+    }
+}
+
+fn describe_transport(
+    protocol: &str,
+    source: &str,
+    destination: &str,
+    dissection: Option<&application::Dissection>,
+) -> String {
+    match dissection {
+        Some(dissection) => format!(
+            "{protocol} {source} {ARROW} {destination} {}",
+            dissection.detail
+        ),
+        None => format!("{protocol} {source} {ARROW} {destination}"),
+    }
+}
+
 fn format_port(address: &str, port: u16) -> String {
     format!("{address}:{port}")
 }
@@ -532,7 +561,7 @@ fn format_mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
-fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
+pub(crate) fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
     if data.is_empty() {
         return PacketProcessingResult {
             packets: Vec::new(),
@@ -562,38 +591,6 @@ fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
         warnings: Vec::new(),
         errors: Vec::new(),
     }
-}
-
-#[wasm_bindgen]
-pub fn process_packet(data: &[u8]) -> String {
-    let result = if data.is_empty() {
-        PacketProcessingResult {
-            packets: Vec::new(),
-            warnings: vec!["Empty payload provided".to_string()],
-            errors: Vec::new(),
-        }
-    } else {
-        match detect_format(data) {
-            CaptureFormat::Pcap => match process_pcap(data) {
-                Ok(result) => result,
-                Err(err) => {
-                    let mut fallback = process_raw_payload(data);
-                    fallback.errors.push(err);
-                    fallback
-                }
-            },
-            CaptureFormat::PcapNg => match process_pcapng(data) {
-                Ok(result) => result,
-                Err(err) => {
-                    let mut fallback = process_raw_payload(data);
-                    fallback.errors.push(err);
-                    fallback
-                }
-            },
-            CaptureFormat::Raw => process_raw_payload(data),
-        }
-    };
-    serialize_result(&result)
 }
 
 #[cfg(test)]
@@ -676,5 +673,196 @@ mod tests {
 
         let summary = build_summary_from_layers(&layers, "unsupported".to_string());
         assert_eq!(summary, "unsupported");
+    }
+
+    /// UDP segment carrying a DNS query for `example.com`.
+    fn dns_over_udp(source_port: u16, destination_port: u16) -> Vec<u8> {
+        let mut message = vec![0x1A, 0x2B, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
+        message.extend_from_slice(&[7]);
+        message.extend_from_slice(b"example");
+        message.extend_from_slice(&[3]);
+        message.extend_from_slice(b"com");
+        message.push(0);
+        message.extend_from_slice(&1u16.to_be_bytes());
+        message.extend_from_slice(&1u16.to_be_bytes());
+
+        let mut segment = source_port.to_be_bytes().to_vec();
+        segment.extend_from_slice(&destination_port.to_be_bytes());
+        segment.extend_from_slice(&((message.len() + 8) as u16).to_be_bytes());
+        segment.extend_from_slice(&0u16.to_be_bytes());
+        segment.extend_from_slice(&message);
+        segment
+    }
+
+    /// TCP segment carrying a minimal TLS 1.2 ClientHello for `example.com`.
+    fn tls_over_tcp(source_port: u16, destination_port: u16) -> Vec<u8> {
+        let host = b"example.com";
+        let mut sni_entry = vec![0u8];
+        sni_entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
+        sni_entry.extend_from_slice(host);
+        let mut sni_body = (sni_entry.len() as u16).to_be_bytes().to_vec();
+        sni_body.extend_from_slice(&sni_entry);
+        let mut extensions = 0u16.to_be_bytes().to_vec();
+        extensions.extend_from_slice(&(sni_body.len() as u16).to_be_bytes());
+        extensions.extend_from_slice(&sni_body);
+
+        let mut hello = 0x0303u16.to_be_bytes().to_vec();
+        hello.extend_from_slice(&[0u8; 32]);
+        hello.push(0);
+        hello.extend_from_slice(&2u16.to_be_bytes());
+        hello.extend_from_slice(&[0x13, 0x01]);
+        hello.extend_from_slice(&[1, 0]);
+        hello.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+        hello.extend_from_slice(&extensions);
+
+        let mut handshake = vec![1u8];
+        handshake.extend_from_slice(&(hello.len() as u32).to_be_bytes()[1..]);
+        handshake.extend_from_slice(&hello);
+
+        let mut record = vec![0x16, 0x03, 0x01];
+        record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+        record.extend_from_slice(&handshake);
+
+        let mut segment = source_port.to_be_bytes().to_vec();
+        segment.extend_from_slice(&destination_port.to_be_bytes());
+        segment.extend_from_slice(&[0; 8]);
+        segment.push(5 << 4);
+        segment.push(0x18);
+        segment.extend_from_slice(&[0; 6]);
+        segment.extend_from_slice(&record);
+        segment
+    }
+
+    fn ipv4_packet(protocol: u8, segment: &[u8]) -> Vec<u8> {
+        let total_length = (20 + segment.len()) as u16;
+        let mut packet = vec![0x45, 0x00];
+        packet.extend_from_slice(&total_length.to_be_bytes());
+        packet.extend_from_slice(&[0, 0, 0, 0, 64, protocol, 0, 0]);
+        packet.extend_from_slice(&[10, 0, 0, 5]);
+        packet.extend_from_slice(&[1, 1, 1, 1]);
+        packet.extend_from_slice(segment);
+        packet
+    }
+
+    fn ipv6_packet(next_header: u8, segment: &[u8]) -> Vec<u8> {
+        let mut packet = vec![0x60, 0, 0, 0];
+        packet.extend_from_slice(&(segment.len() as u16).to_be_bytes());
+        packet.push(next_header);
+        packet.push(64);
+        packet.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        packet.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]);
+        packet.extend_from_slice(segment);
+        packet
+    }
+
+    #[test]
+    fn labels_dns_over_ipv4_udp() {
+        let packet = ipv4_packet(17, &dns_over_udp(51234, 53));
+
+        let analysis = parse_ipv4_packet(&packet).expect("IPv4 packet parses");
+
+        assert_eq!(analysis.protocol, "DNS");
+        assert_eq!(analysis.source, "10.0.0.5:51234");
+        assert_eq!(
+            analysis.summary,
+            "DNS 10.0.0.5:51234 \u{2192} 1.1.1.1:53 Standard query 0x1a2b A example.com"
+        );
+        let dns = analysis.layers.dns.expect("DNS layer is recorded");
+        assert_eq!(dns.questions[0].name, "example.com");
+    }
+
+    #[test]
+    fn labels_mdns_over_ipv6_udp() {
+        let packet = ipv6_packet(17, &dns_over_udp(5353, 5353));
+
+        let analysis = parse_ipv6_packet(&packet).expect("IPv6 packet parses");
+
+        assert_eq!(analysis.protocol, "DNS");
+        assert!(
+            analysis
+                .summary
+                .contains("Standard query 0x1a2b A example.com")
+        );
+    }
+
+    #[test]
+    fn labels_tls_client_hello_over_ipv4_tcp() {
+        let packet = ipv4_packet(6, &tls_over_tcp(51234, 443));
+
+        let analysis = parse_ipv4_packet(&packet).expect("IPv4 packet parses");
+
+        assert_eq!(analysis.protocol, "TLS");
+        assert_eq!(
+            analysis.summary,
+            "TLS 10.0.0.5:51234 \u{2192} 1.1.1.1:443 TLSv1.2 Client Hello (SNI=example.com)"
+        );
+        let tls = analysis.layers.tls.expect("TLS layer is recorded");
+        assert_eq!(
+            tls.client_hello
+                .expect("client hello")
+                .server_name
+                .as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            analysis
+                .layers
+                .tcp
+                .expect("TCP layer is recorded")
+                .header_length,
+            20
+        );
+    }
+
+    #[test]
+    fn labels_tls_on_a_non_standard_port() {
+        let packet = ipv4_packet(6, &tls_over_tcp(51234, 8443));
+
+        let analysis = parse_ipv4_packet(&packet).expect("IPv4 packet parses");
+
+        assert_eq!(analysis.protocol, "TLS");
+    }
+
+    #[test]
+    fn leaves_plain_tcp_alone() {
+        let mut segment = 51234u16.to_be_bytes().to_vec();
+        segment.extend_from_slice(&80u16.to_be_bytes());
+        segment.extend_from_slice(&[0; 8]);
+        segment.push(5 << 4);
+        segment.push(0x18);
+        segment.extend_from_slice(&[0; 6]);
+        segment.extend_from_slice(b"GET / HTTP/1.1\r\n\r\n");
+        let packet = ipv4_packet(6, &segment);
+
+        let analysis = parse_ipv4_packet(&packet).expect("IPv4 packet parses");
+
+        assert_eq!(analysis.protocol, "TCP");
+        assert_eq!(analysis.summary, "TCP 10.0.0.5:51234 \u{2192} 1.1.1.1:80");
+        assert!(analysis.layers.tls.is_none());
+        assert!(analysis.layers.dns.is_none());
+    }
+
+    #[test]
+    fn packet_info_is_the_summary_not_a_json_blob() {
+        let packet = ipv4_packet(17, &dns_over_udp(51234, 53));
+        let analysis = parse_ipv4_packet(&packet).expect("IPv4 packet parses");
+        let summary = analysis.summary.clone();
+
+        let built = create_packet(
+            PacketMetadata {
+                time: "0.000000".to_string(),
+                source: analysis.source,
+                destination: analysis.destination,
+                protocol: analysis.protocol,
+                summary: analysis.summary,
+                length: packet.len(),
+                layers: Some(analysis.layers),
+            },
+            &packet,
+        );
+
+        assert_eq!(built.info, summary);
+        assert!(!built.info.starts_with('{'));
+        assert!(built.hex_preview.starts_with("45 00"));
     }
 }

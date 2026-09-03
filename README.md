@@ -76,6 +76,12 @@ extension headers), ARP, ICMPv4 and ICMPv6 with type/code descriptions, and TCP,
 UDP and SCTP port pairs. Other IP protocol numbers are resolved to a name.
 Null/loopback and raw-IP link types are handled alongside Ethernet.
 
+Above the transport layer: **DNS** (over UDP and TCP, including mDNS, with
+compression-pointer-aware name decoding) and **TLS** record headers with a full
+ClientHello parse — SNI, ALPN and the negotiated version, on any port, not just
+443. Those packets are labelled `DNS` and `TLS` in the Protocol column, so
+`protocol == dns` and `tls` work as display filters.
+
 **The UI.** A four-pane workspace: a packet list, a diagnostics pane that
 separates fatal parse errors from non-fatal warnings (truncated packets,
 dangling interface references), a details pane for the selected packet, and a
@@ -98,9 +104,12 @@ Your display filter and max-file-size preference persist in `localStorage`.
 
 ## Development Notes
 
-- The `core` crate is built with `wasm-bindgen` and exports
-  `process_packet(data: &[u8]) -> String`, which returns the parsed packets,
-  warnings and errors as JSON.
+- The `core` crate is built with `wasm-bindgen` and exports a handle-based
+  API: `parse(data) -> CaptureHandle`, then `packet_count`, `warnings`,
+  `errors`, `packets(offset, count)` for a window of rows as JSON, and
+  `payload(index)` for one packet's bytes as a `Uint8Array`. Nothing that
+  crosses the boundary is proportional to the size of the capture. Call
+  `free()` when finished — the capture is not garbage collected.
 - `cargo test --manifest-path core/Cargo.toml` covers the parsers and
   dissectors; `npm run test -- --run` in `docs/` covers the UI, filter engine
   and exporters. CI runs `cargo fmt --check`, `cargo clippy -D warnings`,

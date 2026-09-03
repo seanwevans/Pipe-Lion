@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import { createPacketExport } from "./exporter";
-import type { PacketRecord } from "./wasm";
+import type { PacketWithPayload } from "./wasm";
 
 const createSamplePacket = (
-  overrides: Partial<PacketRecord> = {},
-): PacketRecord => ({
+  overrides: Partial<PacketWithPayload> = {},
+): PacketWithPayload => ({
+  index: 0,
   time: "1.234567",
   source: "192.168.0.1",
   destination: "192.168.0.2",
   protocol: "TCP",
   length: 3,
   info: "Test packet",
+  hex_preview: "DE AD BE",
+  ascii_preview: "...",
+  payload_length: 3,
   payload: new Uint8Array([0xde, 0xad, 0xbe]),
   ...overrides,
 });
