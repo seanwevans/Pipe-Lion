@@ -18,13 +18,44 @@ import {
 import App from "./App";
 import * as storage from "./storage";
 
-const { processPacketMock, loadProcessorMock } = vi.hoisted(() => ({
-  processPacketMock: vi.fn(),
+const { captureMock, loadProcessorMock, freeMock } = vi.hoisted(() => ({
+  captureMock: vi.fn(),
   loadProcessorMock: vi.fn(),
+  freeMock: vi.fn(),
 }));
 
+type MockPacket = Record<string, unknown> & { payload?: Uint8Array };
+type MockCapture = {
+  packets: MockPacket[];
+  warnings: string[];
+  errors: string[];
+};
+
+/// Stands in for a real `CaptureHandle`: rows come back a window at a time and
+/// payloads one packet at a time, so the tests exercise the same access pattern
+/// the Wasm boundary imposes.
 const mockProcessor = {
-  process_packet: (data: Uint8Array) => processPacketMock(data),
+  parse: (data: Uint8Array) => {
+    const capture = captureMock(data) as MockCapture;
+    const rows = capture.packets.map((packet, index) => ({
+      index,
+      hex_preview: "",
+      ascii_preview: "",
+      payload_length: packet.payload?.length ?? 0,
+      ...packet,
+    }));
+
+    return {
+      packetCount: rows.length,
+      warnings: capture.warnings,
+      errors: capture.errors,
+      packets: (offset: number, count: number) =>
+        rows.slice(offset, offset + count),
+      payload: (index: number) =>
+        capture.packets[index]?.payload ?? new Uint8Array(),
+      free: freeMock,
+    };
+  },
 };
 
 vi.mock("./wasm", () => ({
@@ -84,7 +115,8 @@ function firstEnabled(buttons: HTMLElement[]): HTMLElement {
 describe("App restart flow", () => {
   beforeEach(() => {
     activeReaders.length = 0;
-    processPacketMock.mockReset();
+    captureMock.mockReset();
+    freeMock.mockReset();
     loadProcessorMock.mockReset();
     loadProcessorMock.mockResolvedValue(mockProcessor);
     globalThis.FileReader =
@@ -102,7 +134,7 @@ describe("App restart flow", () => {
   it("resets the workspace to its initial state", async () => {
     const user = userEvent.setup();
 
-    processPacketMock.mockImplementation(() => ({
+    captureMock.mockImplementation(() => ({
       packets: [
         {
           time: "0.000001",
@@ -148,7 +180,7 @@ describe("App restart flow", () => {
     expect(activeReader).toBeDefined();
     await activeReader?.emitLoad();
 
-    await waitFor(() => expect(processPacketMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(captureMock).toHaveBeenCalledTimes(1));
 
     await waitFor(() =>
       expect(statusChip).toHaveTextContent(
@@ -177,10 +209,49 @@ describe("App restart flow", () => {
     expect(screen.getByText("No packet data loaded.")).toBeInTheDocument();
   });
 
+  it("frees the previous capture when the workspace is reset", async () => {
+    const user = userEvent.setup();
+
+    captureMock.mockImplementation(() => ({
+      packets: [
+        {
+          time: "0.000001",
+          source: "1.1.1.1",
+          destination: "2.2.2.2",
+          protocol: "TEST",
+          length: 4,
+          info: "Synthetic packet",
+          payload: Uint8Array.from([0xde, 0xad, 0xbe, 0xef]),
+        },
+      ],
+      warnings: [],
+      errors: [],
+    }));
+
+    render(<App />);
+
+    const fileInput = document.getElementById("file-input") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File([Uint8Array.from([0x01])], "one.pcap")] },
+    });
+
+    await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+    await activeReaders[0]?.emitLoad();
+    await waitFor(() => expect(captureMock).toHaveBeenCalledTimes(1));
+    expect(freeMock).not.toHaveBeenCalled();
+
+    const restartButton = firstEnabled(
+      await screen.findAllByRole("button", { name: "Restart Capture" }),
+    );
+    await user.click(restartButton);
+
+    await waitFor(() => expect(freeMock).toHaveBeenCalledTimes(1));
+  });
+
   it("prevents stale packets from reappearing after restart", async () => {
     const user = userEvent.setup();
 
-    processPacketMock.mockImplementation(() => ({
+    captureMock.mockImplementation(() => ({
       packets: [
         {
           time: "0.000001",
@@ -214,7 +285,7 @@ describe("App restart flow", () => {
     await waitFor(() =>
       expect(statusChip).toHaveTextContent("Processing first.pcap (1 bytes)…"),
     );
-    expect(processPacketMock).not.toHaveBeenCalled();
+    expect(captureMock).not.toHaveBeenCalled();
 
     const secondFile = new File([Uint8Array.from([0x02])], "second.pcap", {
       type: "application/octet-stream",
@@ -230,12 +301,12 @@ describe("App restart flow", () => {
         "Drop packet captures or binary payloads to analyze.",
       ),
     );
-    expect(processPacketMock).not.toHaveBeenCalled();
+    expect(captureMock).not.toHaveBeenCalled();
 
     await Promise.all(activeReaders.map((reader) => reader.emitLoad()));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(processPacketMock).not.toHaveBeenCalled();
+    expect(captureMock).not.toHaveBeenCalled();
     expect(
       screen.getByText("Drop a capture to populate the packet list."),
     ).toBeInTheDocument();
@@ -260,7 +331,8 @@ describe("App restart flow", () => {
 describe("Diagnostics panel", () => {
   beforeEach(() => {
     activeReaders.length = 0;
-    processPacketMock.mockReset();
+    captureMock.mockReset();
+    freeMock.mockReset();
     loadProcessorMock.mockReset();
     loadProcessorMock.mockResolvedValue(mockProcessor);
     globalThis.FileReader =
@@ -272,7 +344,7 @@ describe("Diagnostics panel", () => {
   });
 
   it("renders warning-only diagnostics without fatal section", async () => {
-    processPacketMock.mockImplementation(() => ({
+    captureMock.mockImplementation(() => ({
       packets: [],
       warnings: ["Truncated frame data"],
       errors: [],
@@ -298,7 +370,7 @@ describe("Diagnostics panel", () => {
   });
 
   it("renders error-only diagnostics", async () => {
-    processPacketMock.mockImplementation(() => ({
+    captureMock.mockImplementation(() => ({
       packets: [],
       warnings: [],
       errors: ["Unsupported packet format"],
@@ -324,7 +396,7 @@ describe("Diagnostics panel", () => {
   });
 
   it("renders both warnings and errors together", async () => {
-    processPacketMock.mockImplementation(() => ({
+    captureMock.mockImplementation(() => ({
       packets: [],
       warnings: ["Recovered packet boundary"],
       errors: ["CRC mismatch"],

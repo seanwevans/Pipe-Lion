@@ -1,9 +1,8 @@
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use wasm_bindgen::prelude::*;
-
 mod application;
+mod capture;
 mod core_format;
 mod decode;
 mod dns;
@@ -13,23 +12,17 @@ mod pcapng;
 mod preview;
 mod tls;
 
-use crate::core_format::{CaptureFormat, detect_format};
 use crate::decode::build_summary_from_layers;
 use crate::models::{
     DecodedLayers, EthernetHeader, IcmpHeader, Ipv4Header, Ipv6Header, Packet, PacketAnalysis,
     PacketMetadata, PacketProcessingResult, TcpHeader, UdpHeader,
 };
-use crate::pcap::process_pcap;
-use crate::pcapng::process_pcapng;
 use crate::preview::{build_ascii_preview, build_hex_preview};
+
+pub use crate::capture::{CaptureHandle, parse};
 
 pub(crate) const EM_DASH: &str = "\u{2014}";
 pub(crate) const ARROW: &str = "\u{2192}";
-
-fn serialize_result(result: &PacketProcessingResult) -> String {
-    serde_json::to_string(result)
-        .unwrap_or_else(|_| "{\"packets\":[],\"warnings\":[],\"errors\":[]}".into())
-}
 
 pub(crate) fn format_timestamp(seconds: i64, fractional: u64, resolution: u64) -> String {
     if seconds < 0 {
@@ -568,7 +561,7 @@ fn format_mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
-fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
+pub(crate) fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
     if data.is_empty() {
         return PacketProcessingResult {
             packets: Vec::new(),
@@ -598,38 +591,6 @@ fn process_raw_payload(data: &[u8]) -> PacketProcessingResult {
         warnings: Vec::new(),
         errors: Vec::new(),
     }
-}
-
-#[wasm_bindgen]
-pub fn process_packet(data: &[u8]) -> String {
-    let result = if data.is_empty() {
-        PacketProcessingResult {
-            packets: Vec::new(),
-            warnings: vec!["Empty payload provided".to_string()],
-            errors: Vec::new(),
-        }
-    } else {
-        match detect_format(data) {
-            CaptureFormat::Pcap => match process_pcap(data) {
-                Ok(result) => result,
-                Err(err) => {
-                    let mut fallback = process_raw_payload(data);
-                    fallback.errors.push(err);
-                    fallback
-                }
-            },
-            CaptureFormat::PcapNg => match process_pcapng(data) {
-                Ok(result) => result,
-                Err(err) => {
-                    let mut fallback = process_raw_payload(data);
-                    fallback.errors.push(err);
-                    fallback
-                }
-            },
-            CaptureFormat::Raw => process_raw_payload(data),
-        }
-    };
-    serialize_result(&result)
 }
 
 #[cfg(test)]
