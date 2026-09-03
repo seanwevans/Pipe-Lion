@@ -2,7 +2,6 @@
 
 use serde::Serialize;
 
-#[derive(Serialize)]
 pub struct Packet {
     pub layers: Option<DecodedLayers>,
     pub time: String,
@@ -110,7 +109,6 @@ pub struct DecodedLayers {
     pub tls: Option<TlsRecord>,
 }
 
-#[derive(Serialize)]
 pub struct PacketProcessingResult {
     pub packets: Vec<Packet>,
     pub warnings: Vec<String>,

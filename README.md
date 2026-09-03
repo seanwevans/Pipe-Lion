@@ -104,9 +104,12 @@ Your display filter and max-file-size preference persist in `localStorage`.
 
 ## Development Notes
 
-- The `core` crate is built with `wasm-bindgen` and exports
-  `process_packet(data: &[u8]) -> String`, which returns the parsed packets,
-  warnings and errors as JSON.
+- The `core` crate is built with `wasm-bindgen` and exports a handle-based
+  API: `parse(data) -> CaptureHandle`, then `packet_count`, `warnings`,
+  `errors`, `packets(offset, count)` for a window of rows as JSON, and
+  `payload(index)` for one packet's bytes as a `Uint8Array`. Nothing that
+  crosses the boundary is proportional to the size of the capture. Call
+  `free()` when finished — the capture is not garbage collected.
 - `cargo test --manifest-path core/Cargo.toml` covers the parsers and
   dissectors; `npm run test -- --run` in `docs/` covers the UI, filter engine
   and exporters. CI runs `cargo fmt --check`, `cargo clippy -D warnings`,

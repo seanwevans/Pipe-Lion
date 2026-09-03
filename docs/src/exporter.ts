@@ -1,4 +1,4 @@
-import type { PacketRecord } from "./wasm";
+import type { PacketWithPayload } from "./wasm";
 
 export type PacketExportFormat = "json" | "pcap";
 
@@ -70,7 +70,7 @@ const toBase64 = (bytes: Uint8Array): string => {
 };
 
 const createJsonExport = (
-  packets: PacketRecord[],
+  packets: PacketWithPayload[],
   filenamePrefix: string,
 ): PacketExportResult => {
   const payload = {
@@ -126,7 +126,7 @@ const parseTimestamp = (
 };
 
 const createPcapExport = (
-  packets: PacketRecord[],
+  packets: PacketWithPayload[],
   filenamePrefix: string,
 ): PacketExportResult => {
   const headerLength = 24;
@@ -189,7 +189,7 @@ const createPcapExport = (
 };
 
 export const createPacketExport = (
-  packets: PacketRecord[],
+  packets: PacketWithPayload[],
   options: PacketExportOptions = {},
 ): PacketExportResult => {
   const { format = "json", filenamePrefix = DEFAULT_PREFIX } = options;
@@ -209,7 +209,7 @@ export const createPacketExport = (
 };
 
 export const downloadPacketExport = (
-  packets: PacketRecord[],
+  packets: PacketWithPayload[],
   options: PacketExportOptions = {},
 ): PacketExportResult => {
   if (typeof document === "undefined" || typeof URL === "undefined") {
