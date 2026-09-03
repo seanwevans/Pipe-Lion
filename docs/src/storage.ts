@@ -39,7 +39,7 @@ function safeSet(key: string, value: string): boolean {
   try {
     storage.setItem(key, value);
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -53,7 +53,7 @@ function safeRemove(key: string): boolean {
   try {
     storage.removeItem(key);
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -84,23 +84,18 @@ function sanitizeValues(values: unknown, limit: number): string[] {
 }
 
 export function createStoredList(key: string, limit: number): StoredList {
-  let memoryList: string[] = [];
-
   function load(): string[] {
     const raw = safeGet(key);
     if (raw === null) {
-      memoryList = [];
       return [];
     }
 
     try {
       const parsed = JSON.parse(raw);
       const sanitized = sanitizeValues(parsed, limit);
-      memoryList = sanitized;
       return [...sanitized];
     } catch (err) {
       console.warn("Failed to parse stored list", err);
-      memoryList = [];
       if (!safeRemove(key)) {
         console.warn("Failed to reset stored list after parse error", err);
       }
@@ -110,7 +105,6 @@ export function createStoredList(key: string, limit: number): StoredList {
 
   function remember(value: string): string[] {
     if (limit <= 0) {
-      memoryList = [];
       if (!safeRemove(key)) {
         console.warn("Failed to clear stored list with non-positive limit");
       }
@@ -120,8 +114,6 @@ export function createStoredList(key: string, limit: number): StoredList {
     const existing = load();
     const deduped = existing.filter((item) => item !== value);
     const updated = [value, ...deduped].slice(0, limit);
-
-    memoryList = updated;
     if (!safeSet(key, JSON.stringify(updated))) {
       console.warn("Failed to persist stored list");
     }
@@ -130,7 +122,6 @@ export function createStoredList(key: string, limit: number): StoredList {
   }
 
   function clear(): void {
-    memoryList = [];
     if (!safeRemove(key)) {
       console.warn("Failed to clear stored list");
     }

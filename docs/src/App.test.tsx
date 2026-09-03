@@ -71,6 +71,16 @@ class ControlledFileReader implements Partial<FileReader> {
 const activeReaders: ControlledFileReader[] = [];
 const OriginalFileReader = globalThis.FileReader;
 
+function firstEnabled(buttons: HTMLElement[]): HTMLElement {
+  const button = buttons.find(
+    (candidate) => !candidate.hasAttribute("disabled"),
+  );
+  if (!button) {
+    throw new Error("Expected at least one enabled button");
+  }
+  return button;
+}
+
 describe("App restart flow", () => {
   beforeEach(() => {
     activeReaders.length = 0;
@@ -113,10 +123,7 @@ describe("App restart flow", () => {
     const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
-    const restartButton = restartButtons.find(
-      (button) => !button.hasAttribute("disabled"),
-    );
-    expect(restartButton).toBeDefined();
+    const restartButton = firstEnabled(restartButtons);
     await waitFor(() => expect(restartButton).toBeEnabled());
 
     const statusChip = screen.getByRole("status");
@@ -194,10 +201,7 @@ describe("App restart flow", () => {
     const restartButtons = await screen.findAllByRole("button", {
       name: "Restart Capture",
     });
-    const restartButton = restartButtons.find(
-      (button) => !button.hasAttribute("disabled"),
-    );
-    expect(restartButton).toBeDefined();
+    const restartButton = firstEnabled(restartButtons);
     await waitFor(() => expect(restartButton).toBeEnabled());
     const statusChip = screen.getByRole("status");
 

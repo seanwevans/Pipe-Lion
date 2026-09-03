@@ -244,30 +244,15 @@ const parseProcessingResult = (
               payload.length > 0 ? payload.length : bytes.length;
             const fallbackInfo = toStringOrFallback(record.info, "—");
 
-            // TODO(2026-12-31): Remove legacy src/dst fallback after all clients emit canonical source/destination fields.
-            const legacySource =
-              record.source ?? record.src ?? record.Source ?? record.Src;
-            const legacyDestination =
-              record.destination ??
-              record.dst ??
-              record.Destination ??
-              record.Dst;
-
             return {
               time: toStringOrFallback(record.time, "0.000000"),
-              source: toStringOrFallback(legacySource, "—"),
-              destination: toStringOrFallback(legacyDestination, "—"),
-              protocol: toStringOrFallback(
-                record.protocol ?? record.proto,
-                "—",
-              ),
+              source: toStringOrFallback(record.source, "—"),
+              destination: toStringOrFallback(record.destination, "—"),
+              protocol: toStringOrFallback(record.protocol, "—"),
               length: Math.max(
                 0,
                 Math.round(
-                  toFiniteNumberOrFallback(
-                    record.length ?? record.len ?? record.size,
-                    fallbackLength,
-                  ),
+                  toFiniteNumberOrFallback(record.length, fallbackLength),
                 ),
               ),
               info: infoFromLayers(layers, fallbackInfo),
