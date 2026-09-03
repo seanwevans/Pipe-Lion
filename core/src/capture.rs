@@ -8,6 +8,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::core_format::{CaptureFormat, detect_format};
+use crate::filter::{Filter, FilterError};
 use crate::models::{DecodedLayers, Packet, PacketProcessingResult};
 use crate::pcap::process_pcap;
 use crate::pcapng::process_pcapng;
@@ -101,6 +102,24 @@ impl CaptureHandle {
     /// `Uint8Array`. `None` for an out-of-range index.
     pub fn payload(&self, index: usize) -> Option<Vec<u8>> {
         self.packets.get(index).map(|packet| packet.payload.clone())
+    }
+
+    /// Indices of the packets matching a display filter, in capture order.
+    ///
+    /// Evaluation happens here, over packets already in linear memory: only the
+    /// indices cross the boundary. An empty expression selects everything; a
+    /// malformed one throws with the message the input box shows.
+    pub fn filter(&self, expression: &str) -> Result<Vec<u32>, JsError> {
+        self.select(expression)
+            .map_err(|err| JsError::new(&err.message))
+    }
+}
+
+impl CaptureHandle {
+    /// The body of [`CaptureHandle::filter`], separated so it is reachable from
+    /// native tests — constructing a `JsError` requires a JS runtime.
+    pub(crate) fn select(&self, expression: &str) -> Result<Vec<u32>, FilterError> {
+        Filter::compile(expression).map(|filter| filter.select(&self.packets))
     }
 }
 
@@ -248,6 +267,25 @@ mod tests {
         assert_eq!(payload.len(), 42);
         assert_eq!(&payload[..2], &[0x11, 0x22]);
         assert!(handle.payload(3).is_none());
+    }
+
+    #[test]
+    fn filters_without_moving_packets_across_the_boundary() {
+        let handle = parse(&sample_capture());
+
+        assert_eq!(handle.select("icmp").unwrap(), vec![0, 1, 2]);
+        assert_eq!(handle.select("time == 2.000000").unwrap(), vec![1]);
+        assert_eq!(handle.select("").unwrap(), vec![0, 1, 2]);
+        assert!(handle.select("protocol == tcp").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_malformed_filter_is_an_error_not_an_empty_selection() {
+        let handle = parse(&sample_capture());
+
+        let err = handle.select("tcp &").expect_err("the filter is rejected");
+
+        assert_eq!(err.message, "Unexpected \'&\'");
     }
 
     #[test]

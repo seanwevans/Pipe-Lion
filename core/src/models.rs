@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+#[derive(Clone)]
 pub struct Packet {
     pub layers: Option<DecodedLayers>,
     pub time: String,

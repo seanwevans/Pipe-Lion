@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import {
-  evaluateFilter,
   parseFilter,
   tokenizeFilter,
   type FilterNode,
@@ -111,7 +110,6 @@ function toFilterPacketRecord(packet: WasmPacketRecord): FilterPacketRecord {
 type PacketSummaryEntry = {
   packet: WasmPacketRecord;
   record: FilterPacketRecord;
-  searchableText: string;
   originalIndex: number;
 };
 
@@ -581,41 +579,41 @@ function App() {
 
   const activeFilter =
     filterAst !== null && filterError === null && filterText.trim().length > 0;
-  const searchablePackets = useMemo<PacketSummaryEntry[]>(
+  const allPacketEntries = useMemo<PacketSummaryEntry[]>(
     () =>
-      packets.map((packet, index) => {
-        const record = toFilterPacketRecord(packet);
-        const searchableText = [
-          record.time,
-          record.source,
-          record.destination,
-          record.protocol,
-          record.length,
-          record.info,
-          record.summary,
-        ]
-          .filter((value): value is string | number => value !== undefined)
-          .map((value) => String(value))
-          .join(" ")
-          .toLowerCase();
-
-        return {
-          packet,
-          record,
-          originalIndex: index,
-          searchableText,
-        };
-      }),
+      packets.map((packet, index) => ({
+        packet,
+        record: toFilterPacketRecord(packet),
+        originalIndex: index,
+      })),
     [packets],
   );
-  const visiblePacketEntries = useMemo(() => {
-    if (activeFilter && filterAst) {
-      return searchablePackets.filter((entry) =>
-        evaluateFilter(filterAst, entry.record, entry.searchableText),
-      );
+
+  // Filtering runs in the core, over packets already in linear memory; only
+  // the matching indices cross the boundary. The AST parsed in TypeScript is
+  // still what decides whether the expression is worth running at all, and
+  // what the input box highlights.
+  const matchingIndices = useMemo(() => {
+    const session = sessionRef.current;
+    if (!activeFilter || !session || packets.length === 0) {
+      return null;
     }
-    return searchablePackets;
-  }, [activeFilter, filterAst, searchablePackets]);
+    try {
+      return Array.from(session.filter(filterText));
+    } catch (err) {
+      console.debug("Core rejected the display filter", err);
+      return [];
+    }
+  }, [activeFilter, filterText, packets]);
+
+  const visiblePacketEntries = useMemo(() => {
+    if (matchingIndices === null) {
+      return allPacketEntries;
+    }
+    return matchingIndices
+      .map((index) => allPacketEntries[index])
+      .filter((entry): entry is PacketSummaryEntry => entry !== undefined);
+  }, [allPacketEntries, matchingIndices]);
   const visibleCount = visiblePacketEntries.length;
   const visibleCountLabel = visibleCount === 1 ? "packet" : "packets";
   const totalCountLabel = totalPackets === 1 ? "packet" : "packets";

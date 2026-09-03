@@ -1,51 +1,99 @@
 import { describe, expect, it } from "vitest";
 import {
-  evaluateFilter,
+  analyzeFilter,
   parseFilter,
   tokenizeFilter,
-  type PacketRecord,
+  type FilterNode,
 } from "./filter";
 
-const makePacket = (overrides: Partial<PacketRecord>): PacketRecord => {
-  const { info, ...rest } = overrides;
-  const base: PacketRecord = {
-    info: typeof info === "string" ? info : "",
-  };
-  return Object.assign(base, rest);
-};
+// Evaluation lives in the Rust core (`core/src/filter.rs`); what TypeScript
+// still owns is turning text into an AST and locating syntax errors for the
+// input box, so that is what these cover.
 
-describe("filter helpers", () => {
-  it("parses and evaluates explicit AND expressions", () => {
-    const ast = parseFilter(tokenizeFilter("foo && bar"));
-    expect(evaluateFilter(ast, makePacket({ info: "foo and bar" }))).toBe(true);
-    expect(evaluateFilter(ast, makePacket({ info: "foo only" }))).toBe(false);
-    expect(evaluateFilter(ast, makePacket({ info: "bar only" }))).toBe(false);
+const ast = (expression: string): FilterNode =>
+  parseFilter(tokenizeFilter(expression));
+
+describe("tokenizeFilter", () => {
+  it("recognizes symbolic and keyword operators alike", () => {
+    expect(tokenizeFilter("a && b")).toEqual(tokenizeFilter("a and b"));
+    expect(tokenizeFilter("a || b")).toEqual(tokenizeFilter("a or b"));
+    expect(tokenizeFilter("!a")).toEqual(tokenizeFilter("not a"));
   });
 
+  it("keeps quoted phrases intact and honours escapes", () => {
+    expect(tokenizeFilter('"foo bar"')).toEqual([
+      { type: "TEXT", value: "foo bar" },
+    ]);
+    expect(tokenizeFilter('"foo \\"bar"')).toEqual([
+      { type: "TEXT", value: 'foo "bar' },
+    ]);
+    expect(tokenizeFilter("'single quoted'")).toEqual([
+      { type: "TEXT", value: "single quoted" },
+    ]);
+  });
+});
+
+describe("parseFilter", () => {
   it("treats whitespace separated terms as implicit AND", () => {
-    const implicit = parseFilter(tokenizeFilter("foo bar"));
-    const explicit = parseFilter(tokenizeFilter("foo && bar"));
-    expect(implicit).toEqual(explicit);
+    expect(ast("foo bar")).toEqual(ast("foo && bar"));
   });
 
   it("gives NOT higher precedence than AND", () => {
-    const ast = parseFilter(tokenizeFilter("!foo bar"));
-    expect(evaluateFilter(ast, makePacket({ info: "bar only" }))).toBe(true);
-    expect(evaluateFilter(ast, makePacket({ info: "foo bar" }))).toBe(false);
+    expect(ast("!foo bar")).toEqual({
+      type: "and",
+      left: { type: "not", operand: { type: "text", value: "foo" } },
+      right: { type: "text", value: "bar" },
+    });
   });
 
-  it("supports quoted phrases", () => {
-    const ast = parseFilter(tokenizeFilter('"foo bar" baz'));
-    expect(evaluateFilter(ast, makePacket({ info: "foo bar baz" }))).toBe(true);
-    expect(evaluateFilter(ast, makePacket({ info: "foo qux baz" }))).toBe(
-      false,
-    );
+  it("gives AND higher precedence than OR", () => {
+    expect(ast("a || b && c")).toEqual({
+      type: "or",
+      left: { type: "text", value: "a" },
+      right: {
+        type: "and",
+        left: { type: "text", value: "b" },
+        right: { type: "text", value: "c" },
+      },
+    });
+  });
+
+  it("lets parentheses override precedence", () => {
+    expect(ast("(a || b) && c")).toEqual({
+      type: "and",
+      left: {
+        type: "or",
+        left: { type: "text", value: "a" },
+        right: { type: "text", value: "b" },
+      },
+      right: { type: "text", value: "c" },
+    });
+  });
+
+  it("lowercases field names and free text but not comparison values", () => {
+    expect(ast("Protocol == TCP")).toEqual({
+      type: "comparison",
+      field: "protocol",
+      operator: "eq",
+      value: "TCP",
+    });
+    expect(ast("TCP")).toEqual({ type: "text", value: "tcp" });
+  });
+
+  it("parses contains comparisons", () => {
+    expect(ast("src contains 10.0.0")).toEqual({
+      type: "comparison",
+      field: "src",
+      operator: "contains",
+      value: "10.0.0",
+    });
   });
 
   it("throws on common syntax errors", () => {
     expect(() => tokenizeFilter('"unterminated')).toThrowError(
       /Unterminated quoted string/,
     );
+    expect(() => tokenizeFilter("foo &")).toThrowError(/Unexpected '&'/);
     expect(() => parseFilter(tokenizeFilter("foo &&"))).toThrowError(
       /Unexpected end of expression|Expected filter term/,
     );
@@ -55,88 +103,34 @@ describe("filter helpers", () => {
     expect(() => parseFilter(tokenizeFilter("foo ) bar"))).toThrowError(
       /Unexpected trailing tokens|Expected filter term|Unexpected token/,
     );
-  });
-
-  it("evaluates equality and substring comparisons against packet fields", () => {
-    const packet = makePacket({
-      info: "TCP handshake",
-      protocol: "TCP",
-      src: "10.0.0.42",
-      dst: "8.8.8.8",
-      length: 60,
-    });
-    const ast = parseFilter(
-      tokenizeFilter('protocol == "tcp" && src contains 10.0.0'),
+    expect(() => parseFilter(tokenizeFilter("protocol =="))).toThrowError(
+      /Expected comparison value/,
     );
-    expect(evaluateFilter(ast, packet)).toBe(true);
+  });
+});
 
-    const mismatch = makePacket({
-      info: "UDP packet",
-      protocol: "udp",
-      src: "10.0.0.42",
+describe("analyzeFilter", () => {
+  it("returns an empty analysis for a blank expression", () => {
+    expect(analyzeFilter("   ")).toEqual({
+      tokens: [],
+      ast: null,
+      error: null,
     });
-    expect(evaluateFilter(ast, mismatch)).toBe(false);
   });
 
-  it("matches field comparisons when searchable text omits the field value", () => {
-    const ast = parseFilter(tokenizeFilter('protocol == "tcp"'));
-    const packet = makePacket({
-      info: "Generic packet",
-      protocol: "TCP",
-    });
+  it("reports the character range of a syntax error", () => {
+    const { ast: parsed, error } = analyzeFilter("protocol == ");
 
-    const searchableText = "generic packet";
-    expect(evaluateFilter(ast, packet, searchableText)).toBe(true);
-
-    const mismatch = makePacket({
-      info: "Generic packet",
-      protocol: "udp",
-    });
-    expect(evaluateFilter(ast, mismatch, searchableText)).toBe(false);
+    expect(parsed).toBeNull();
+    expect(error?.message).toMatch(/Expected comparison value/);
+    expect(error?.start).toBe(9);
+    expect(error?.end).toBe(11);
   });
 
-  it("supports negations and boolean combinations with comparisons", () => {
-    const ast = parseFilter(
-      tokenizeFilter(
-        '!(protocol == "udp") && (dst contains 8.8 || info contains handshake)',
-      ),
-    );
-    const packet = makePacket({
-      info: "TLS handshake to 8.8.8.8",
-      protocol: "TCP",
-      dst: "8.8.8.8",
-    });
-    expect(evaluateFilter(ast, packet)).toBe(true);
+  it("carries the tokens alongside a failed parse so highlighting still works", () => {
+    const { tokens, error } = analyzeFilter("(foo");
 
-    const nonMatching = makePacket({
-      info: "UDP request",
-      protocol: "udp",
-      dst: "1.1.1.1",
-    });
-    expect(evaluateFilter(ast, nonMatching)).toBe(false);
-  });
-
-  it("falls back to searching the Info column when a field is missing", () => {
-    const ast = parseFilter(tokenizeFilter("dst contains example || request"));
-    const packet = makePacket({ info: "HTTP request to example.com" });
-    expect(evaluateFilter(ast, packet)).toBe(true);
-
-    const mismatch = makePacket({ info: "DNS query" });
-    expect(evaluateFilter(ast, mismatch)).toBe(false);
-  });
-
-  it("matches free-text terms against searchable text from other columns", () => {
-    const ast = parseFilter(tokenizeFilter("10.0.0.42"));
-    const packet = makePacket({
-      info: "TLS handshake",
-      src: "10.0.0.42",
-      dst: "8.8.8.8",
-    });
-
-    const searchableText = "tls handshake 10.0.0.42 8.8.8.8";
-    expect(evaluateFilter(ast, packet, searchableText)).toBe(true);
-
-    const mismatchText = "tls handshake 8.8.8.8";
-    expect(evaluateFilter(ast, packet, mismatchText)).toBe(false);
+    expect(error).not.toBeNull();
+    expect(tokens.map((token) => token.type)).toEqual(["LPAREN", "TEXT"]);
   });
 });
