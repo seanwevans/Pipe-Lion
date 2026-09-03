@@ -76,6 +76,12 @@ extension headers), ARP, ICMPv4 and ICMPv6 with type/code descriptions, and TCP,
 UDP and SCTP port pairs. Other IP protocol numbers are resolved to a name.
 Null/loopback and raw-IP link types are handled alongside Ethernet.
 
+Above the transport layer: **DNS** (over UDP and TCP, including mDNS, with
+compression-pointer-aware name decoding) and **TLS** record headers with a full
+ClientHello parse — SNI, ALPN and the negotiated version, on any port, not just
+443. Those packets are labelled `DNS` and `TLS` in the Protocol column, so
+`protocol == dns` and `tls` work as display filters.
+
 **The UI.** A four-pane workspace: a packet list, a diagnostics pane that
 separates fatal parse errors from non-fatal warnings (truncated packets,
 dangling interface references), a details pane for the selected packet, and a
@@ -84,10 +90,11 @@ hex/ASCII dump of its bytes. Arrow keys move through the list.
 **Display filters.** A Wireshark-flavoured expression language — `&&`/`||`/`!`
 (or `and`/`or`/`not`), parentheses, quoted strings, and `field == value` /
 `field contains value` over `time`, `src`/`source`, `dst`/`destination`,
-`protocol`, `length` and `info`. A bare word matches anywhere in the packet's
-summary. The input offers field completions and keeps recent filters as
-one-click chips, and syntax errors are underlined in place instead of silently
-matching nothing.
+`protocol`, `length` and `info`. A bare word matches anywhere in the row.
+Evaluation runs in the Rust core, over packets already in linear memory, and
+only the matching indices cross back. The input offers field completions and
+keeps recent filters as one-click chips, and syntax errors are underlined in
+place instead of silently matching nothing.
 
 **Export.** The current packet set can be written back out as JSON (with
 base64 payloads) or as a `.pcap` file.
@@ -98,9 +105,13 @@ Your display filter and max-file-size preference persist in `localStorage`.
 
 ## Development Notes
 
-- The `core` crate is built with `wasm-bindgen` and exports
-  `process_packet(data: &[u8]) -> String`, which returns the parsed packets,
-  warnings and errors as JSON.
+- The `core` crate is built with `wasm-bindgen` and exports a handle-based
+  API: `parse(data) -> CaptureHandle`, then `packet_count`, `warnings`,
+  `errors`, `packets(offset, count)` for a window of rows as JSON,
+  `payload(index)` for one packet's bytes as a `Uint8Array`, and
+  `filter(expression)` for the indices matching a display filter. Nothing that
+  crosses the boundary is proportional to the size of the capture. Call
+  `free()` when finished — the capture is not garbage collected.
 - `cargo test --manifest-path core/Cargo.toml` covers the parsers and
   dissectors; `npm run test -- --run` in `docs/` covers the UI, filter engine
   and exporters. CI runs `cargo fmt --check`, `cargo clippy -D warnings`,
