@@ -52,7 +52,7 @@ npm run dev
 ```
 
 Vite serves the app at the URL printed in the console (usually `http://localhost:5173`). Drag a `.pcap`, `.pcapng`, or any
-binary blob onto the drop zone to see the stubbed response from the WebAssembly module along with a generated hex preview.
+binary blob onto the drop zone and the WebAssembly core parses it in place — nothing is uploaded anywhere.
 
 To create a production build, run:
 
@@ -62,13 +62,49 @@ npm run build
 
 ---
 
+## What it does today
+
+Everything runs client-side; the capture never leaves the browser.
+
+**Capture formats.** Classic libpcap (`.pcap`, both endiannesses, microsecond and
+nanosecond resolution) and PCAPNG (section headers, interface descriptions,
+enhanced and simple packet blocks). Anything else is surfaced as a single raw
+payload rather than rejected.
+
+**Dissection.** Ethernet II, IPv4 and IPv6 (including a walk over the common
+extension headers), ARP, ICMPv4 and ICMPv6 with type/code descriptions, and TCP,
+UDP and SCTP port pairs. Other IP protocol numbers are resolved to a name.
+Null/loopback and raw-IP link types are handled alongside Ethernet.
+
+**The UI.** A four-pane workspace: a packet list, a diagnostics pane that
+separates fatal parse errors from non-fatal warnings (truncated packets,
+dangling interface references), a details pane for the selected packet, and a
+hex/ASCII dump of its bytes. Arrow keys move through the list.
+
+**Display filters.** A Wireshark-flavoured expression language — `&&`/`||`/`!`
+(or `and`/`or`/`not`), parentheses, quoted strings, and `field == value` /
+`field contains value` over `time`, `src`/`source`, `dst`/`destination`,
+`protocol`, `length` and `info`. A bare word matches anywhere in the packet's
+summary. The input offers field completions and keeps recent filters as
+one-click chips, and syntax errors are underlined in place instead of silently
+matching nothing.
+
+**Export.** The current packet set can be written back out as JSON (with
+base64 payloads) or as a `.pcap` file.
+
+Your display filter and max-file-size preference persist in `localStorage`.
+
+---
+
 ## Development Notes
 
-- The `core` crate is configured with `wasm-bindgen` and exports a `process_packet(data: &[u8]) -> String` helper that will
-  eventually produce structured packet information.
-- The React UI preloads `core.wasm`, handles drag-and-drop uploads, and renders placeholder panes for packet summaries and hex
-  output to make iterating on the Wasm module straightforward.
-- Additional tooling (tests, linting, CI) will be added as the project grows.
+- The `core` crate is built with `wasm-bindgen` and exports
+  `process_packet(data: &[u8]) -> String`, which returns the parsed packets,
+  warnings and errors as JSON.
+- `cargo test --manifest-path core/Cargo.toml` covers the parsers and
+  dissectors; `npm run test -- --run` in `docs/` covers the UI, filter engine
+  and exporters. CI runs `cargo fmt --check`, `cargo clippy -D warnings`,
+  `cargo test`, and the frontend lint on every pull request.
 
 ---
 
