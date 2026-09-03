@@ -76,6 +76,12 @@ extension headers), ARP, ICMPv4 and ICMPv6 with type/code descriptions, and TCP,
 UDP and SCTP port pairs. Other IP protocol numbers are resolved to a name.
 Null/loopback and raw-IP link types are handled alongside Ethernet.
 
+Above the transport layer: **DNS** (over UDP and TCP, including mDNS, with
+compression-pointer-aware name decoding) and **TLS** record headers with a full
+ClientHello parse — SNI, ALPN and the negotiated version, on any port, not just
+443. Those packets are labelled `DNS` and `TLS` in the Protocol column, so
+`protocol == dns` and `tls` work as display filters.
+
 **The UI.** A four-pane workspace: a packet list, a diagnostics pane that
 separates fatal parse errors from non-fatal warnings (truncated packets,
 dangling interface references), a details pane for the selected packet, and a

@@ -10,11 +10,48 @@ export interface PacketRecord extends FilterPacketRecord {
   payload: Uint8Array;
   layers?: DecodedLayers;
 }
+
+export interface DnsQuestion {
+  name: string;
+  qtype: string;
+  qclass: string;
+}
+
+export interface DnsLayer {
+  id: number;
+  is_response: boolean;
+  truncated: boolean;
+  opcode: string;
+  rcode: string;
+  question_count: number;
+  answer_count: number;
+  authority_count: number;
+  additional_count: number;
+  questions: DnsQuestion[];
+}
+
+export interface TlsClientHello {
+  version: string;
+  server_name: string | null;
+  alpn: string[];
+}
+
+export interface TlsLayer {
+  content_type: string;
+  version: string;
+  handshake_type: string | null;
+  client_hello: TlsClientHello | null;
+}
+
 export interface DecodedLayers {
   ethernet?: { source_mac: string; destination_mac: string; ethertype: number };
   ipv4?: { source: string; destination: string; protocol: number };
   ipv6?: { source: string; destination: string; next_header: number };
-  tcp?: { source_port: number; destination_port: number };
+  tcp?: {
+    source_port: number;
+    destination_port: number;
+    header_length: number;
+  };
   udp?: { source_port: number; destination_port: number; length: number };
   icmp?: {
     icmp_type: number;
@@ -22,6 +59,8 @@ export interface DecodedLayers {
     description: string;
     version: string;
   };
+  dns?: DnsLayer;
+  tls?: TlsLayer;
 }
 
 export interface PacketProcessingResult {
@@ -186,27 +225,6 @@ const createFallbackResult = (
   };
 };
 
-const infoFromLayers = (layers: unknown, fallback: string): string => {
-  if (!layers || typeof layers !== "object") return fallback;
-  const typed = layers as DecodedLayers;
-  if (typed.icmp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `${typed.icmp.version} ${src} → ${dst} (${typed.icmp.description})`;
-  }
-  if (typed.tcp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `TCP ${src}:${typed.tcp.source_port} → ${dst}:${typed.tcp.destination_port}`;
-  }
-  if (typed.udp && (typed.ipv4 || typed.ipv6)) {
-    const src = typed.ipv4?.source ?? typed.ipv6?.source ?? "—";
-    const dst = typed.ipv4?.destination ?? typed.ipv6?.destination ?? "—";
-    return `UDP ${src}:${typed.udp.source_port} → ${dst}:${typed.udp.destination_port}`;
-  }
-  return fallback;
-};
-
 const parseProcessingResult = (
   raw: string,
   bytes: Uint8Array,
@@ -242,7 +260,6 @@ const parseProcessingResult = (
                 : undefined;
             const fallbackLength =
               payload.length > 0 ? payload.length : bytes.length;
-            const fallbackInfo = toStringOrFallback(record.info, "—");
 
             return {
               time: toStringOrFallback(record.time, "0.000000"),
@@ -255,7 +272,7 @@ const parseProcessingResult = (
                   toFiniteNumberOrFallback(record.length, fallbackLength),
                 ),
               ),
-              info: infoFromLayers(layers, fallbackInfo),
+              info: toStringOrFallback(record.info, "—"),
               payload,
               layers,
             };

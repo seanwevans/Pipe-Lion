@@ -797,7 +797,7 @@ function App() {
           <FilterInput
             id="display-filter"
             label="Display filter"
-            placeholder="tcp && http"
+            placeholder="dns || tls"
             value={filterText}
             describedById={filterError ? "display-filter-error" : undefined}
             onFilterChange={onFilterChange}
