@@ -11,6 +11,8 @@ mod models;
 mod pcap;
 mod pcapng;
 mod preview;
+#[cfg(test)]
+mod sample_captures;
 mod tls;
 
 use crate::decode::build_summary_from_layers;
