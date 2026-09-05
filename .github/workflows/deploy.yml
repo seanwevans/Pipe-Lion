@@ -5,6 +5,11 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +28,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "20"
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
@@ -33,10 +38,15 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install wasm-pack
-        run: cargo install wasm-pack
+        run: cargo install wasm-pack --locked
 
+      # --out-dir is resolved relative to the crate, so this must climb out of
+      # core/ to reach the directory Vite copies into the site.
       - name: Build WebAssembly package
-        run: wasm-pack build core --target web --out-dir docs/public/pkg
+        run: wasm-pack build core --target web --out-dir ../docs/public/pkg
+
+      - name: Verify Wasm package landed in the site assets
+        run: test -f docs/public/pkg/core_bg.wasm && test -f docs/public/pkg/core.js
 
       - name: Install frontend dependencies
         working-directory: docs
@@ -52,6 +62,9 @@ jobs:
       - name: Build site
         working-directory: docs
         run: npm run build
+
+      - name: Verify built site includes the Wasm bundle
+        run: test -f docs/dist/pkg/core_bg.wasm && test -f docs/dist/pkg/core.js
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

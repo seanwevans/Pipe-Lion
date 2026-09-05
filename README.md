@@ -33,11 +33,12 @@ Wireshark, Pipelion, nevermind... I'll see myself out.
 From the repository root, run:
 
 ```bash
-wasm-pack build core --target web --out-dir docs/public/pkg
+wasm-pack build core --target web --out-dir ../docs/public/pkg
 ```
 
 This command compiles the `core` crate, generates the accompanying JavaScript bindings, and places the artifacts where the
-frontend can fetch them (`docs/public/pkg`). Re-run it whenever you change the Rust code.
+frontend can fetch them (`docs/public/pkg`). `--out-dir` is resolved relative to the crate, hence the leading `../`. Re-run it
+whenever you change the Rust code.
 
 ---
 

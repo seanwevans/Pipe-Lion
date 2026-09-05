@@ -56,7 +56,7 @@ jobs:
         run: cargo test --manifest-path core/Cargo.toml --all-features
 
   webapp:
-    name: Webapp lint
+    name: Webapp checks
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -76,3 +76,13 @@ jobs:
       - name: Run lint
         working-directory: docs
         run: npm run lint
+
+      # The deploy workflow runs these too, but only after a merge to main.
+      # Running them here keeps a broken build off main in the first place.
+      - name: Run tests
+        working-directory: docs
+        run: npm run test -- --run
+
+      - name: Build site
+        working-directory: docs
+        run: npm run build
