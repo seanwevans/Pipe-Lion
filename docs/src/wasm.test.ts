@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { PacketProcessor } from "./wasm";
+import { resolveAssetUrl, type PacketProcessor } from "./wasm";
 
 describe("resolveAssetUrl", () => {
   it("creates a URL when window is unavailable", async () => {
@@ -27,7 +27,10 @@ describe("resolveAssetUrl", () => {
 });
 
 describe("loadProcessor", () => {
-  const CORE_MODULE_PATH = "http://localhost/pkg/core.js";
+  // The loader imports the bindings through a base-path-aware absolute URL, and
+  // the base path depends on GITHUB_REPOSITORY at build time. Ask the module
+  // itself for the identifier so the mock keeps matching off a Pages build.
+  const CORE_MODULE_PATH = resolveAssetUrl("./pkg/core.js").href;
 
   const mockHandle = (rows: unknown[], payloads: Uint8Array[] = []) => ({
     packet_count: rows.length,
