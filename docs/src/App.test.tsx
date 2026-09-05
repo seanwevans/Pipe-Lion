@@ -129,6 +129,15 @@ function firstEnabled(buttons: HTMLElement[]): HTMLElement {
   return button;
 }
 
+/// The toolbar renders a permanently disabled duplicate of each control, so the
+/// live one has to be picked out by name. It only becomes enabled once the
+/// async `loadProcessor` call resolves and sets `isReady`, and `findAllByRole`
+/// settles as soon as the buttons *exist* — both are still disabled at that
+/// point. Retry until the enabled one shows up instead of sampling once.
+async function findEnabledButton(name: string): Promise<HTMLElement> {
+  return waitFor(() => firstEnabled(screen.getAllByRole("button", { name })));
+}
+
 describe("App restart flow", () => {
   beforeEach(() => {
     activeReaders.length = 0;
@@ -173,11 +182,7 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButtons = await screen.findAllByRole("button", {
-      name: "Restart Capture",
-    });
-    const restartButton = firstEnabled(restartButtons);
-    await waitFor(() => expect(restartButton).toBeEnabled());
+    const restartButton = await findEnabledButton("Restart Capture");
 
     const statusChip = screen.getByRole("status");
     expect(statusChip).toHaveTextContent(
@@ -302,9 +307,7 @@ describe("App restart flow", () => {
     await waitFor(() => expect(captureMock).toHaveBeenCalledTimes(1));
     expect(freeMock).not.toHaveBeenCalled();
 
-    const restartButton = firstEnabled(
-      await screen.findAllByRole("button", { name: "Restart Capture" }),
-    );
+    const restartButton = await findEnabledButton("Restart Capture");
     await user.click(restartButton);
 
     await waitFor(() => expect(freeMock).toHaveBeenCalledTimes(1));
@@ -331,11 +334,7 @@ describe("App restart flow", () => {
 
     render(<App />);
 
-    const restartButtons = await screen.findAllByRole("button", {
-      name: "Restart Capture",
-    });
-    const restartButton = firstEnabled(restartButtons);
-    await waitFor(() => expect(restartButton).toBeEnabled());
+    const restartButton = await findEnabledButton("Restart Capture");
     const statusChip = screen.getByRole("status");
 
     const fileInput = document.getElementById("file-input") as HTMLInputElement;
