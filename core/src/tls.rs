@@ -171,7 +171,9 @@ fn highest_supported_version(body: &[u8]) -> Option<u16> {
     let mut cursor = Cursor::new(body);
     let list_len = cursor.u8()? as usize;
     let list = cursor.take(list_len)?;
-    list.chunks_exact(2)
+    list.as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
         .filter(|version| (0x0300..=0x0304).contains(version))
         .max()

@@ -254,19 +254,17 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 );
             }
         }
-        1 => {
-            if payload.len() >= 2 {
-                let icmp_type = payload[0];
-                let icmp_code = payload[1];
-                let description = describe_icmpv4(icmp_type, icmp_code);
-                analysis.layers.icmp = Some(IcmpHeader {
-                    icmp_type,
-                    icmp_code,
-                    description: description.clone(),
-                    version: "ICMP".to_string(),
-                });
-                analysis.summary = format!("ICMP {src_ip} {ARROW} {dst_ip} ({description})");
-            }
+        1 if payload.len() >= 2 => {
+            let icmp_type = payload[0];
+            let icmp_code = payload[1];
+            let description = describe_icmpv4(icmp_type, icmp_code);
+            analysis.layers.icmp = Some(IcmpHeader {
+                icmp_type,
+                icmp_code,
+                description: description.clone(),
+                version: "ICMP".to_string(),
+            });
+            analysis.summary = format!("ICMP {src_ip} {ARROW} {dst_ip} ({description})");
         }
         _ => {}
     }
@@ -379,19 +377,17 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<PacketAnalysis> {
                 );
             }
         }
-        58 => {
-            if payload.len() >= 2 {
-                let icmp_type = payload[0];
-                let icmp_code = payload[1];
-                let description = describe_icmpv6(icmp_type, icmp_code);
-                analysis.layers.icmp = Some(IcmpHeader {
-                    icmp_type,
-                    icmp_code,
-                    description: description.clone(),
-                    version: "ICMPv6".to_string(),
-                });
-                analysis.summary = format!("ICMPv6 {src_ip} {ARROW} {dst_ip} ({description})");
-            }
+        58 if payload.len() >= 2 => {
+            let icmp_type = payload[0];
+            let icmp_code = payload[1];
+            let description = describe_icmpv6(icmp_type, icmp_code);
+            analysis.layers.icmp = Some(IcmpHeader {
+                icmp_type,
+                icmp_code,
+                description: description.clone(),
+                version: "ICMPv6".to_string(),
+            });
+            analysis.summary = format!("ICMPv6 {src_ip} {ARROW} {dst_ip} ({description})");
         }
         _ => {}
     }
