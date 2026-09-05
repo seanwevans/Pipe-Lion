@@ -63,6 +63,29 @@ npm run build
 
 ---
 
+## Sample Captures
+
+No capture handy? The **Sample** menu in the toolbar loads one of the bundled captures:
+
+| Sample | Shows off |
+| --- | --- |
+| DNS lookup | A/PTR questions, response flags, mDNS on port 5353 |
+| TCP / HTTP | A full connection: handshake, request, response, teardown |
+| TLS Client Hello | Record layer, SNI, ALPN, negotiated version |
+| ICMP ping (IPv4 + IPv6) | Echo request/reply over both IP versions |
+| Mixed traffic (pcapng) | All of the above, in PCAPNG rather than classic pcap |
+
+They live in `docs/public/samples` and are synthesized rather than captured, so they contain no real traffic and use the
+IANA documentation address ranges (`192.0.2.0/24`, `198.51.100.0/24`, `2001:db8::/32`). Regenerate them with:
+
+```bash
+python3 tools/make_sample_captures.py
+```
+
+`core` parses each one in its test suite, so a decoder change that breaks a sample fails CI rather than the deployed site.
+
+---
+
 ## What it does today
 
 Everything runs client-side; the capture never leaves the browser.

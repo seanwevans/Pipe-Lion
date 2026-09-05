@@ -313,6 +313,87 @@ describe("App restart flow", () => {
     await waitFor(() => expect(freeMock).toHaveBeenCalledTimes(1));
   });
 
+  it("loads a bundled sample capture through the normal file path", async () => {
+    const user = userEvent.setup();
+
+    captureMock.mockImplementation(() => ({
+      packets: [
+        {
+          time: "1.000000",
+          source: "192.0.2.10:51234",
+          destination: "192.0.2.53:53",
+          protocol: "DNS",
+          length: 74,
+          info: "Standard query 0x1a2b A example.com",
+          payload: Uint8Array.from([0x00]),
+        },
+      ],
+      warnings: [],
+      errors: [],
+    }));
+
+    const sampleBytes = Uint8Array.from([0xd4, 0xc3, 0xb2, 0xa1]);
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => sampleBytes.buffer.slice(0),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(<App />);
+      await findEnabledButton("Restart Capture");
+
+      const sampleSelect = document.getElementById(
+        "sample-capture",
+      ) as HTMLSelectElement;
+      await user.selectOptions(sampleSelect, "dns-lookup.pcap");
+
+      // BASE_URL keeps the request correct under a project Pages path.
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          `${import.meta.env.BASE_URL}samples/dns-lookup.pcap`,
+        ),
+      );
+
+      await waitFor(() => expect(activeReaders.length).toBeGreaterThan(0));
+      await activeReaders[0]?.emitLoad(sampleBytes.buffer.slice(0));
+
+      await waitFor(() => expect(captureMock).toHaveBeenCalledTimes(1));
+      expect(
+        await screen.findByText("Standard query 0x1a2b A example.com"),
+      ).toBeInTheDocument();
+
+      // Reset to the placeholder so the same sample can be chosen again.
+      expect(sampleSelect.value).toBe("");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("surfaces a failed sample download", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(<App />);
+      await findEnabledButton("Restart Capture");
+
+      await user.selectOptions(
+        document.getElementById("sample-capture") as HTMLSelectElement,
+        "tls-client-hello.pcap",
+      );
+
+      const banner = await screen.findByRole("alert");
+      expect(banner).toHaveTextContent("TLS Client Hello");
+      expect(banner).toHaveTextContent("404");
+      expect(captureMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("prevents stale packets from reappearing after restart", async () => {
     const user = userEvent.setup();
 
